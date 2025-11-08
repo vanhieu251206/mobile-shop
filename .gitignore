@@ -1,0 +1,15 @@
+# Editors/OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs & env
+.env
+*.log
+cache/
+tmp/
+
+# PHP/Node (nếu dùng)
+vendor/
+node_modules/
+dist/
