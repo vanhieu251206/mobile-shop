@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <title>Đăng nhập - MultiShop</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+
+    <!-- Favicon -->
+    <link href="img/favicon.ico" rel="icon">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Main Style (từ dự án cũ) -->
+    <link href="css/style.css" rel="stylesheet">
+
+    <!-- CSS tùy chỉnh cho login -->
+    <style>
+        body {
+            background-color: #f9f9fb;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        /* Header màu tím */
+        .bg-header {
+            background-color: rgb(108, 117, 125);
+        }
+
+        /* Form đăng nhập */
+        .login-container {
+            max-width: 400px;
+            margin: 80px auto;
+            background: #fff;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border-top: 6px solid #FFD700;
+        }
+
+        .login-container h3 {
+            text-align: center;
+            color: rgb(108, 117, 125);
+            font-weight: 700;
+            margin-bottom: 25px;
+        }
+
+        .form-control {
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+
+        .btn-login {
+            background-color: #FFD700;
+            color: rgb(108, 117, 125);
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            transition: 0.3s;
+        }
+
+        .btn-login:hover {
+            background-color: #6A0DAD;
+            color: #fff;
+        }
+
+        a {
+            color: #6A0DAD;
+        }
+
+        a:hover {
+            color: #FFD700;
+            text-decoration: none;
+        }
+
+        footer {
+            background-color: rgb(108, 117, 125);
+            color: #fff;
+        }
+
+        footer a {
+            color: #FFD700;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ========== Header (Tím) ========== -->
+    <div class="container-fluid bg-header text-light py-3 px-xl-5">
+        <div class="row align-items-center">
+            <div class="col-lg-4 text-center text-lg-left">
+                <a href="index.html" class="text-decoration-none">
+                    <span class="h1 text-uppercase text-warning bg-light px-2 rounded">Multi</span>
+                    <span class="h1 text-uppercase text-light">Shop</span>
+                </a>
+            </div>
+            <div class="col-lg-8 text-center text-lg-right">
+                <div class="d-inline-flex align-items-center">
+                    <a class="text-light px-3" href="index.html">Trang chủ</a>
+                    <a class="text-light px-3" href="shop.html">Sản phẩm</a>
+                    <a class="text-light px-3" href="contact.html">Liên hệ</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== Login Form ========== -->
+    <div class="login-container">
+        <h3>Đăng nhập tài khoản</h3>
+        <form onsubmit="return checkLogin();">
+            <div class="form-group">
+                <label for="username">Tên đăng nhập</label>
+                <input type="text" class="form-control" id="username" placeholder="Nhập tên đăng nhập">
+            </div>
+            <div class="form-group">
+                <label for="password">Mật khẩu</label>
+                <input type="password" class="form-control" id="password" placeholder="Nhập mật khẩu">
+            </div>
+            <button type="submit" class="btn btn-login btn-block">Đăng nhập</button>
+            <div class="text-center mt-3">
+                <a href="forgot.html">Quên mật khẩu?</a> |
+                <a href="register.html">Đăng ký tài khoản</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- ========== Footer ========== -->
+    <footer class="mt-5 py-4 text-center">
+        <p class="mb-1">&copy; 2025 MultiShop. All Rights Reserved.</p>
+    </footer>
+
+    <!-- ========== JS ========== -->
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        function checkLogin() {
+            const user = document.getElementById("username").value.trim();
+            const pass = document.getElementById("password").value.trim();
+
+            if (user === "" || pass === "") {
+                alert("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu!");
+                return false;
+            }
+            alert("Đăng nhập thành công!");
+            return true;
+        }
+    </script>
+</body>
+</html>

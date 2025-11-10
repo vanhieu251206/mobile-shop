@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <title>Quên mật khẩu - MultiShop</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body { background-color: #f9f9fb; font-family: 'Roboto', sans-serif; }
+        .bg-header { background-color: rgb(108, 117, 125); }
+        .login-container {
+            max-width: 400px; margin: 80px auto; background: #fff; padding: 40px;
+            border-radius: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.1); border-top: 6px solid #FFD700;
+        }
+        .login-container h3 { text-align: center; color: rgb(108,117,125); font-weight: 700; margin-bottom: 25px; }
+        .form-control { border-radius: 8px; border: 1px solid #ddd; }
+        .btn-reset {
+            background-color: #FFD700; color: rgb(108,117,125); font-weight: bold; border: none; border-radius: 8px; transition: 0.3s;
+        }
+        .btn-reset:hover { background-color: rgb(108,117,125); color: #fff; }
+        a { color: rgb(108,117,125); } a:hover { color: #FFD700; text-decoration: none; }
+        footer { background-color: rgb(108,117,125); color: #fff; }
+        footer a { color: #FFD700; } footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid bg-header text-light py-3 px-xl-5">
+        <div class="row align-items-center">
+            <div class="col-lg-4 text-center text-lg-left">
+                <a href="index.html" class="text-decoration-none">
+                    <span class="h1 text-uppercase text-warning bg-light px-2 rounded">Multi</span>
+                    <span class="h1 text-uppercase" style="color: rgb(108,117,125);">Shop</span>
+                </a>
+            </div>
+            <div class="col-lg-8 text-center text-lg-right">
+                <div class="d-inline-flex align-items-center">
+                    <a class="text-light px-3" href="index.html">Trang chủ</a>
+                    <a class="text-light px-3" href="shop.html">Sản phẩm</a>
+                    <a class="text-light px-3" href="contact.html">Liên hệ</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="login-container">
+        <h3>Khôi phục mật khẩu</h3>
+        <form onsubmit="return checkForgot();">
+            <div class="form-group">
+                <label for="forgot-email">Nhập email của bạn</label>
+                <input type="email" class="form-control" id="forgot-email" placeholder="Nhập email">
+            </div>
+            <button type="submit" class="btn btn-reset btn-block">Gửi liên kết</button>
+            <div class="text-center mt-3">
+                <a href="login.html">Quay lại đăng nhập</a>
+            </div>
+        </form>
+    </div>
+
+    <footer class="mt-5 py-4 text-center">
+        <p class="mb-1">&copy; 2025 MultiShop. All Rights Reserved.</p>
+    </footer>
+
+    <script>
+        function checkForgot(){
+            const email = document.getElementById("forgot-email").value.trim();
+            if(!email){
+                alert("Vui lòng nhập email!");
+                return false;
+            }
+            alert("Đã gửi liên kết khôi phục mật khẩu đến email của bạn!");
+            return true;
+        }
+    </script>
+</body>
+</html>
