@@ -414,6 +414,62 @@
 
     <!-- Template Javascript -->
     <script src="js/main.js"></script>
+    <script>
+        $(document).ready(function () {
+            // Gỡ bỏ sự kiện cũ của template (nếu có)
+            $(".btn-plus, .btn-minus").off("click");
+        
+            // Hàm cập nhật tổng tiền
+            function updateCartTotal() {
+                let total = 0;
+                $("tbody tr").each(function () {
+                    const priceText = $(this).find("td:nth-child(2)").text().replace(/[^\d]/g, "");
+                    const price = parseFloat(priceText);
+                    const quantity = parseInt($(this).find("input").val()) || 1;
+                    const subtotal = price * quantity;
+                    $(this).find("td:nth-child(4)").text(subtotal.toLocaleString('vi-VN') + "₫");
+                    total += subtotal;
+                });
+        
+                const shipping = 200000;
+                $(".bg-light h6:contains('Tạm tính')").next().text(total.toLocaleString('vi-VN') + "₫");
+                $(".bg-light h5:contains('Tổng')").next().text((total + shipping).toLocaleString('vi-VN') + "₫");
+            }
+        
+            // Nút cộng
+            $(".btn-plus").on("click", function () {
+                let input = $(this).closest(".input-group").find("input");
+                let val = parseInt(input.val()) || 0;
+                input.val(val + 1);
+                updateCartTotal();
+            });
+        
+            // Nút trừ
+            $(".btn-minus").on("click", function () {
+                let input = $(this).closest(".input-group").find("input");
+                let val = parseInt(input.val()) || 0;
+                if (val > 1) input.val(val - 1);
+                updateCartTotal();
+            });
+        
+            // Khi nhập tay
+            $("input").on("input", function () {
+                let val = parseInt($(this).val());
+                if (isNaN(val) || val < 1) $(this).val(1);
+                updateCartTotal();
+            });
+        
+            // Nút xóa sản phẩm
+            $(".btn-danger").on("click", function () {
+                $(this).closest("tr").remove();
+                updateCartTotal();
+            });
+        
+            // Gọi 1 lần khi load
+            updateCartTotal();
+        });
+        </script>
+        
 </body>
 
 </html>
