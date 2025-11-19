@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Quản trị sản phẩm - MobileShop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Google Fonts + FontAwesome (giống template) -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet" />
+
+  <!-- Thư viện CSS giống site -->
+  <link href="lib/animate/animate.min.css" rel="stylesheet" />
+  <link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet" />
+  <!-- CSS chính của dự án -->
+  <link href="css/style.css" rel="stylesheet" />
+  <style>
+    /* Một vài tinh chỉnh nhỏ cho trang quản trị */
+    .card { border-radius: 0.6rem; }
+    .table td, .table th { vertical-align: middle; }
+    .thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
+    .required:after { content:" *"; color:#e74c3c; }
+  </style>
+</head>
+<body class="bg-light">
+
+  <!-- Topbar rút gọn -->
+  <div class="container-fluid bg-dark text-light py-2 px-xl-5">
+    <div class="d-flex justify-content-between align-items-center">
+      <a href="index.html" class="text-light text-decoration-none">
+        <span class="h4 text-uppercase bg-primary text-dark px-2 py-1">Mobile</span>
+        <span class="h4 text-uppercase bg-light text-dark px-2 py-1 ml-n1">Shop</span>
+      </a>
+      <div>
+        <a href="shop.html" class="btn btn-sm btn-outline-light">Về trang bán hàng</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-fluid px-xl-5 py-4">
+    <h3 class="mb-3">Quản trị sản phẩm</h3>
+
+    <!-- FORM: Thêm/Sửa -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h5 id="form-title" class="mb-3">Thêm sản phẩm</h5>
+        <form id="product-form" class="row">
+          <input type="hidden" id="id" />
+
+          <div class="form-group col-md-4">
+            <label class="required">Tên sản phẩm</label>
+            <input id="name" class="form-control" placeholder="VD: iPhone 15 Pro" required />
+          </div>
+
+          <div class="form-group col-md-3">
+            <label class="required">Hãng</label>
+            <input id="brand" class="form-control" placeholder="Apple / Samsung / Xiaomi..." required />
+          </div>
+
+          <div class="form-group col-md-3">
+            <label class="required">Giá (VND)</label>
+            <input id="price" type="number" min="0" class="form-control" placeholder="29990000" required />
+          </div>
+
+          <div class="form-group col-md-2">
+            <label>Tồn kho</label>
+            <input id="stock" type="number" min="0" class="form-control" value="0" />
+          </div>
+
+          <div class="form-group col-md-3">
+            <label>Chip</label>
+            <input id="chip" class="form-control" placeholder="A17 Pro / Snapdragon 8 Gen 3..." />
+          </div>
+
+          <div class="form-group col-md-2">
+            <label>RAM</label>
+            <input id="ram" class="form-control" placeholder="8GB / 12GB..." />
+          </div>
+
+          <div class="form-group col-md-3">
+            <label>Bộ nhớ</label>
+            <input id="storage" class="form-control" placeholder="128GB / 256GB..." />
+          </div>
+
+          <div class="form-group col-md-4">
+            <label>Màn hình</label>
+            <input id="screen" class="form-control" placeholder='6.1" OLED 120Hz...' />
+          </div>
+
+          <div class="form-group col-md-4">
+            <label>Pin</label>
+            <input id="battery" class="form-control" placeholder="5000 mAh sạc 45W..." />
+          </div>
+
+          <div class="form-group col-md-4">
+            <label>Camera</label>
+            <input id="camera" class="form-control" placeholder="Chính 50MP + Tele 10MP..." />
+          </div>
+
+          <div class="form-group col-md-6">
+            <label>Ảnh chính (URL)</label>
+            <input id="imgMain" class="form-control" placeholder="img/iphone-15.jpg" />
+            <small class="text-muted">Có thể dùng ảnh trong thư mục <code>img/</code> của dự án.</small>
+          </div>
+
+          <div class="form-group col-md-6">
+            <label>Gallery (URL, cách nhau bằng dấu phẩy)</label>
+            <input id="gallery" class="form-control" placeholder="img/a.jpg, img/b.jpg, ..." />
+          </div>
+
+          <div class="form-group col-12">
+            <label>Mô tả</label>
+            <textarea id="desc" class="form-control" rows="2" placeholder="Mô tả ngắn về sản phẩm..."></textarea>
+          </div>
+
+          <div class="col-12 mt-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="fa fa-save mr-1"></i> Lưu
+            </button>
+            <button type="button" id="btn-reset" class="btn btn-secondary ml-2">
+              <i class="fa fa-undo mr-1"></i> Làm mới
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- DANH SÁCH -->
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Danh sách sản phẩm</h5>
+          <input id="search" class="form-control" style="max-width: 320px" placeholder="Tìm theo tên / hãng..." />
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover">
+            <thead class="thead-light">
+              <tr>
+                <th style="width: 64px;">ID</th>
+                <th>Tên</th>
+                <th>Hãng</th>
+                <th class="text-right">Giá</th>
+                <th class="text-center">Tồn</th>
+                <th>Ảnh</th>
+                <th style="width: 150px;">Hành động</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <!-- Render bằng js/admin.js -->
+            </tbody>
+          </table>
+        </div>
+        <small class="text-muted d-block mt-2">
+          Lưu ý: Dữ liệu được lưu trong <strong>localStorage</strong> trình duyệt để demo. Khi deploy thật cần backend/API.
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Back to top -->
+  <a href="#" class="btn btn-primary back-to-top"><i class="fa fa-angle-double-up"></i></a>
+
+  <!-- JS thư viện giống site -->
+  <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
+  <script src="lib/easing/easing.min.js"></script>
+  <script src="lib/owlcarousel/owl.carousel.min.js"></script>
+
+  <!-- Dữ liệu + đồng bộ localStorage -->
+  <script src="js/products.js"></script>
+  <script>
+    (function () {
+      try {
+        const raw = localStorage.getItem("MOBILE_SHOP_PRODUCTS");
+        if (raw) window.PRODUCTS = JSON.parse(raw);
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Logic CRUD của trang admin -->
+  <script src="js/admin.js"></script>
+</body>
+</html>
