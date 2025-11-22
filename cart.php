@@ -217,14 +217,14 @@
               id="navbarCollapse"
             >
               <div class="navbar-nav mr-auto py-0">
-                 <a href="index.html" class="nav-item nav-link active"
+                 <a href="index.php" class="nav-item nav-link active"
                   >Trang chủ</a
                 >
-                <a href="shop.html" class="nav-item nav-link">Cửa hàng</a>
-                <a href="detail.html" class="nav-item nav-link"
+                <a href="shop.php" class="nav-item nav-link">Cửa hàng</a>
+                <a href="detail.php" class="nav-item nav-link"
                   >Chi tiết sản phẩm</a
                 >
-                <a href="contact.html" class="nav-item nav-link">Liên hệ</a>
+                <a href="contact.php" class="nav-item nav-link">Liên hệ</a>
                 <di class="nav-item dropdown">
                   <a
                     href="#"
@@ -233,8 +233,8 @@
                     >Trang <i class="fa fa-angle-down mt-1"></i
                   ></a>
                   <div class="dropdown-menu bg-primary rounded-0 border-0 m-0">
-                    <a href="cart.html" class="dropdown-item">Thống kê báo cáo</a>
-                    <a href="checkout.html" class="dropdown-item active"
+                    <a href="cart.php" class="dropdown-item">Thống kê báo cáo</a>
+                    <a href="checkout.php" class="dropdown-item active"
                       >Quản lý nội dung </a
                     >
                 

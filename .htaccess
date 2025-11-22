@@ -1,0 +1,14 @@
+# D:\xampp\htdocs\mobile_shop\mobile-shop\.htaccess
+
+RewriteEngine On
+
+# 🚨 SỬA DÒNG NÀY: Dùng RewriteBase an toàn hơn 
+#    Dựa trên URL của bạn: http://localhost/mobile_shop/mobile-shop/
+RewriteBase /mobile_shop/mobile-shop/
+
+# Không áp dụng cho các file và thư mục có sẵn
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Quy tắc chuyển hướng Opauth
+RewriteRule ^auth/opauth-master/(.*)$ auth/opauth-master/opauth.php/$1 [L,QSA]
