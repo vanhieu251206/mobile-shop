@@ -1,27 +1,142 @@
+<?php
+// =====================
+// 1) KẾT NỐI DATABASE
+// =====================
+$host = "localhost";
+$db   = "shop_phone4";
+$user = "root";
+$pass = ""; // XAMPP mặc định trống
+$charset = "utf8mb4";
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=$charset", $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+    ]);
+} catch (Exception $e) {
+    die("Lỗi kết nối DB: " . $e->getMessage());
+}
+
+// =====================
+// 2) NHẬN THAM SỐ LỌC GET
+// =====================
+$q     = trim($_GET['q'] ?? "");
+$brand = trim($_GET['brand'] ?? "");
+$price = trim($_GET['price'] ?? "");
+$chip  = trim($_GET['chip'] ?? "");
+$ram   = trim($_GET['ram'] ?? "");
+$sort  = trim($_GET['sort'] ?? "latest");
+
+$page  = max(1, (int)($_GET['page'] ?? 1));
+$limit = 9; // số sản phẩm mỗi trang
+$offset = ($page - 1) * $limit;
+
+// =====================
+// 3) XỬ LÝ KHOẢNG GIÁ
+// =====================
+$minPrice = 0;
+$maxPrice = PHP_INT_MAX;
+if ($price !== "") {
+    $tmp = explode("-", $price);
+    if (count($tmp) == 2) {
+        $minPrice = (int)$tmp[0];
+        $maxPrice = (int)$tmp[1];
+    }
+}
+
+// =====================
+// 4) BUILD SQL LỌC
+// =====================
+$where = [];
+$params = [];
+
+if ($q !== "") {
+    $where[] = "sp.ten_san_pham LIKE :q";
+    $params[':q'] = "%$q%";
+}
+if ($brand !== "") {
+    $where[] = "sp.hang = :brand";
+    $params[':brand'] = $brand;
+}
+$where[] = "sp.gia BETWEEN :minPrice AND :maxPrice";
+$params[':minPrice'] = $minPrice;
+$params[':maxPrice'] = $maxPrice;
+
+if ($chip !== "") {
+    $where[] = "sp.chip = :chip";
+    $params[':chip'] = $chip;
+}
+if ($ram !== "") {
+    $where[] = "sp.ram = :ram";
+    $params[':ram'] = $ram;
+}
+
+$whereSql = $where ? ("WHERE " . implode(" AND ", $where)) : "";
+
+// =====================
+// 5) SORT
+// =====================
+$orderSql = "ORDER BY sp.ngay_tao DESC";
+if ($sort === "price-asc")  $orderSql = "ORDER BY sp.gia ASC";
+if ($sort === "price-desc") $orderSql = "ORDER BY sp.gia DESC";
+
+// =====================
+// 6) LẤY TỔNG SẢN PHẨM (để phân trang)
+// =====================
+$sqlCount = "SELECT COUNT(*) FROM san_pham sp $whereSql";
+$stmtCount = $pdo->prepare($sqlCount);
+$stmtCount->execute($params);
+$total = (int)$stmtCount->fetchColumn();
+$totalPages = max(1, ceil($total / $limit));
+
+// =====================
+// 7) LẤY DATA SẢN PHẨM
+// =====================
+$sql = "
+    SELECT sp.*
+    FROM san_pham sp
+    $whereSql
+    $orderSql
+    LIMIT :limit OFFSET :offset
+";
+$stmt = $pdo->prepare($sql);
+foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+$stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
+$stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
+$stmt->execute();
+$products = $stmt->fetchAll();
+
+// =====================
+// 8) LẤY DISTINCT HÃNG/CHIP/RAM CHO DROPDOWN
+// =====================
+$brands = $pdo->query("SELECT DISTINCT hang FROM san_pham WHERE hang IS NOT NULL AND hang<>'' ORDER BY hang")->fetchAll();
+$chips  = $pdo->query("SELECT DISTINCT chip FROM san_pham WHERE chip IS NOT NULL AND chip<>'' ORDER BY chip")->fetchAll();
+$rams   = $pdo->query("SELECT DISTINCT ram FROM san_pham WHERE ram IS NOT NULL AND ram<>'' ORDER BY ram")->fetchAll();
+
+function money($v) {
+    return number_format($v, 0, ",", ".") . " ₫";
+}
+function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
+
+// Dùng lại query string khi phân trang
+function buildQuery($extra = []) {
+    $q = array_merge($_GET, $extra);
+    return http_build_query($q);
+}
+?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8">
   <title>MobileShop - Cửa hàng điện thoại</title>
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
-  <meta content="Điện thoại, smartphone, phụ kiện" name="keywords">
-  <meta content="Cửa hàng mua bán điện thoại di động trực tuyến" name="description">
 
-  <!-- Favicon -->
   <link href="img/favicon.ico" rel="icon">
-
-  <!-- Google Web Fonts -->
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-
-  <!-- Font Awesome -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
-
-  <!-- Libraries Stylesheet -->
   <link href="lib/animate/animate.min.css" rel="stylesheet">
   <link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
-
-  <!-- Customized Bootstrap Stylesheet -->
   <link href="css/style.css" rel="stylesheet">
 </head>
 
@@ -59,6 +174,7 @@
         </div>
       </div>
     </div>
+
     <div class="row align-items-center bg-light py-3 px-xl-5 d-none d-lg-flex">
       <div class="col-lg-4">
         <a href="index.html" class="text-decoration-none">
@@ -66,18 +182,21 @@
           <span class="h1 text-uppercase text-dark bg-primary px-2 ml-n1">Shop</span>
         </a>
       </div>
+
+      <!-- SEARCH FORM (GET) -->
       <div class="col-lg-4 col-6 text-left">
-        <form onsubmit="return false;">
+        <form method="get">
           <div class="input-group">
-            <input id="searchInput" type="text" class="form-control" placeholder="Tìm theo tên điện thoại...">
+            <input name="q" value="<?=h($q)?>" type="text" class="form-control" placeholder="Tìm theo tên điện thoại...">
             <div class="input-group-append">
-              <button id="btnSearch" class="input-group-text bg-transparent text-primary">
+              <button class="input-group-text bg-transparent text-primary">
                 <i class="fa fa-search"></i>
               </button>
             </div>
           </div>
         </form>
       </div>
+
       <div class="col-lg-4 col-6 text-right">
         <p class="m-0">Hỗ trợ khách hàng</p>
         <h5 class="m-0">(+84) 0123 456 789</h5>
@@ -119,8 +238,8 @@
           <div class="collapse navbar-collapse justify-content-between" id="navbarCollapse">
             <div class="navbar-nav mr-auto py-0">
               <a href="index.html" class="nav-item nav-link">Trang chủ</a>
-              <a href="shop.html" class="nav-item nav-link active">Cửa hàng</a>
-              <a href="detail.html" class="nav-item nav-link">Chi tiết</a>
+              <a href="shop.php" class="nav-item nav-link active">Cửa hàng</a>
+              <a href="detail.php" class="nav-item nav-link">Chi tiết</a>
               <div class="nav-item dropdown">
                 <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">Trang khác <i class="fa fa-angle-down mt-1"></i></a>
                 <div class="dropdown-menu bg-primary rounded-0 border-0 m-0">
@@ -153,7 +272,7 @@
       <div class="col-12">
         <nav class="breadcrumb bg-light mb-30">
           <a class="breadcrumb-item text-dark" href="index.html">Trang chủ</a>
-          <a class="breadcrumb-item text-dark" href="shop.html">Cửa hàng</a>
+          <a class="breadcrumb-item text-dark" href="shop.php">Cửa hàng</a>
           <span class="breadcrumb-item active">Danh sách sản phẩm</span>
         </nav>
       </div>
@@ -164,69 +283,79 @@
   <!-- Shop Start -->
   <div class="container-fluid">
     <div class="row px-xl-5">
+
       <!-- Sidebar Start -->
       <div class="col-lg-3 col-md-4">
-        <!-- Brand -->
-        <h5 class="section-title position-relative text-uppercase mb-3">
-          <span class="bg-secondary pr-3">Lọc theo hãng</span>
-        </h5>
-        <div class="bg-light p-4 mb-30">
-          <select id="filterBrand" class="custom-select">
-            <option value="">Tất cả hãng</option>
-            <option>Apple</option>
-            <option>Samsung</option>
-            <option>Xiaomi</option>
-            <option>OPPO</option>
-            <option>Vivo</option>
-            <option>realme</option>
-          </select>
-        </div>
+        <form method="get" class="mb-3">
 
-        <!-- Price -->
-        <h5 class="section-title position-relative text-uppercase mb-3">
-          <span class="bg-secondary pr-3">Lọc theo giá</span>
-        </h5>
-        <div class="bg-light p-4 mb-30">
-          <select id="filterPrice" class="custom-select">
-            <option value="">Tất cả mức giá</option>
-            <option value="0-5000000">Dưới 5 triệu</option>
-            <option value="5000000-10000000">5–10 triệu</option>
-            <option value="10000000-20000000">10–20 triệu</option>
-            <option value="20000000-100000000">Trên 20 triệu</option>
-          </select>
-        </div>
-
-        <!-- Specs -->
-        <h5 class="section-title position-relative text-uppercase mb-3">
-          <span class="bg-secondary pr-3">Lọc theo cấu hình</span>
-        </h5>
-        <div class="bg-light p-4 mb-30">
-          <div class="form-group mb-3">
-            <label for="filterChip" class="mb-1">Chip xử lý</label>
-            <select id="filterChip" class="custom-select">
-              <option value="">Tất cả</option>
-              <option>Apple A</option>
-              <option>Snapdragon</option>
-              <option>Dimensity</option>
-              <option>Exynos</option>
+          <!-- Lọc hãng -->
+          <h5 class="section-title position-relative text-uppercase mb-3">
+            <span class="bg-secondary pr-3">Lọc theo hãng</span>
+          </h5>
+          <div class="bg-light p-4 mb-30">
+            <select name="brand" class="custom-select">
+              <option value="">Tất cả hãng</option>
+              <?php foreach ($brands as $b): ?>
+                <option value="<?=h($b['hang'])?>" <?=($brand===$b['hang'])?'selected':''?>>
+                  <?=h($b['hang'])?>
+                </option>
+              <?php endforeach; ?>
             </select>
           </div>
-          <div class="form-group mb-0">
-            <label for="filterRam" class="mb-1">RAM</label>
-            <select id="filterRam" class="custom-select">
-              <option value="">Tất cả</option>
-              <option>4GB</option>
-              <option>6GB</option>
-              <option>8GB</option>
-              <option>12GB</option>
+
+          <!-- Lọc giá -->
+          <h5 class="section-title position-relative text-uppercase mb-3">
+            <span class="bg-secondary pr-3">Lọc theo giá</span>
+          </h5>
+          <div class="bg-light p-4 mb-30">
+            <select name="price" class="custom-select">
+              <option value="">Tất cả mức giá</option>
+              <option value="0-5000000"        <?=$price==="0-5000000"?"selected":""?>>Dưới 5 triệu</option>
+              <option value="5000000-10000000" <?=$price==="5000000-10000000"?"selected":""?>>5–10 triệu</option>
+              <option value="10000000-20000000"<?=$price==="10000000-20000000"?"selected":""?>>10–20 triệu</option>
+              <option value="20000000-100000000"<?=$price==="20000000-100000000"?"selected":""?>>Trên 20 triệu</option>
             </select>
           </div>
-        </div>
 
-        <div class="bg-light p-4 mb-30">
-          <button id="btnApply" class="btn btn-primary btn-block mb-2">Áp dụng bộ lọc</button>
-          <button id="btnReset" class="btn btn-outline-secondary btn-block">Xoá bộ lọc</button>
-        </div>
+          <!-- Lọc cấu hình -->
+          <h5 class="section-title position-relative text-uppercase mb-3">
+            <span class="bg-secondary pr-3">Lọc theo cấu hình</span>
+          </h5>
+          <div class="bg-light p-4 mb-30">
+            <div class="form-group mb-3">
+              <label class="mb-1">Chip xử lý</label>
+              <select name="chip" class="custom-select">
+                <option value="">Tất cả</option>
+                <?php foreach ($chips as $c): ?>
+                  <option value="<?=h($c['chip'])?>" <?=($chip===$c['chip'])?'selected':''?>>
+                    <?=h($c['chip'])?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <div class="form-group mb-0">
+              <label class="mb-1">RAM</label>
+              <select name="ram" class="custom-select">
+                <option value="">Tất cả</option>
+                <?php foreach ($rams as $r): ?>
+                  <option value="<?=h($r['ram'])?>" <?=($ram===$r['ram'])?'selected':''?>>
+                    <?=h($r['ram'])?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+
+          <!-- Giữ keyword khi lọc -->
+          <input type="hidden" name="q" value="<?=h($q)?>">
+          <input type="hidden" name="sort" value="<?=h($sort)?>">
+
+          <div class="bg-light p-4 mb-30">
+            <button class="btn btn-primary btn-block mb-2" type="submit">Áp dụng bộ lọc</button>
+            <a href="shop.php" class="btn btn-outline-secondary btn-block">Xoá bộ lọc</a>
+          </div>
+        </form>
       </div>
       <!-- Sidebar End -->
 
@@ -236,44 +365,95 @@
           <div class="col-12 pb-1">
             <div class="d-flex align-items-center justify-content-between mb-4">
               <div class="text-muted small">
-                <span id="countText">Đang hiển thị 0 sản phẩm</span>
+                <span>Đang hiển thị <?=count($products)?> / <?=$total?> sản phẩm</span>
               </div>
+
+              <!-- SORT -->
               <div class="ml-2">
                 <div class="btn-group">
                   <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">Sắp xếp</button>
                   <div class="dropdown-menu dropdown-menu-right">
-                    <a class="dropdown-item sort-item" data-sort="latest" href="#">Mới nhất</a>
-                    <a class="dropdown-item sort-item" data-sort="price-asc" href="#">Giá tăng dần</a>
-                    <a class="dropdown-item sort-item" data-sort="price-desc" href="#">Giá giảm dần</a>
+                    <a class="dropdown-item" href="shop.php?<?=buildQuery(['sort'=>'latest','page'=>1])?>">Mới nhất</a>
+                    <a class="dropdown-item" href="shop.php?<?=buildQuery(['sort'=>'price-asc','page'=>1])?>">Giá tăng dần</a>
+                    <a class="dropdown-item" href="shop.php?<?=buildQuery(['sort'=>'price-desc','page'=>1])?>">Giá giảm dần</a>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Khu vực render sản phẩm -->
-          <div id="productList" class="row w-100"></div>
+          <!-- Render sản phẩm -->
+          <?php if (!$products): ?>
+            <div class="col-12">
+              <div class="alert alert-warning">Không tìm thấy sản phẩm phù hợp.</div>
+            </div>
+          <?php endif; ?>
 
-          <!-- Phân trang demo (tĩnh) -->
+          <?php foreach ($products as $p): ?>
+            <div class="col-lg-4 col-md-6 col-sm-6 pb-1">
+              <div class="product-item bg-light mb-4">
+                <div class="product-img position-relative overflow-hidden">
+                  <img class="img-fluid w-100" 
+                       src="img/<?=h($p['hinh_anh'] ?: 'product-1.jpg')?>"
+                       alt="<?=h($p['ten_san_pham'])?>">
+                  <div class="product-action">
+                    <a class="btn btn-outline-dark btn-square" href="#"><i class="fa fa-shopping-cart"></i></a>
+                    <a class="btn btn-outline-dark btn-square" href="#"><i class="far fa-heart"></i></a>
+                    <a class="btn btn-outline-dark btn-square" href="#"><i class="fa fa-sync-alt"></i></a>
+                    <a class="btn btn-outline-dark btn-square" href="detail.php?id=<?=$p['id']?>"><i class="fa fa-search"></i></a>
+                  </div>
+                </div>
+                <div class="text-center py-4">
+                  <a class="h6 text-decoration-none text-truncate" href="detail.php?id=<?=$p['id']?>">
+                    <?=h($p['ten_san_pham'])?>
+                  </a>
+                  <div class="d-flex align-items-center justify-content-center mt-2">
+                    <h5><?=money($p['gia'])?></h5>
+                  </div>
+                  <div class="d-flex align-items-center justify-content-center mb-1">
+                    <small class="text-muted mr-2"><?=h($p['hang'] ?? '')?></small>
+                    <?php if (!empty($p['chip'])): ?>
+                      <small class="text-muted mr-2">• <?=h($p['chip'])?></small>
+                    <?php endif; ?>
+                    <?php if (!empty($p['ram'])): ?>
+                      <small class="text-muted">• <?=h($p['ram'])?></small>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <?php endforeach; ?>
+
+          <!-- Pagination -->
+          <?php if ($totalPages > 1): ?>
           <div class="col-12 mt-3">
             <nav>
               <ul class="pagination justify-content-center">
-                <li class="page-item disabled"><a class="page-link" href="#">Trước</a></li>
-                <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                <li class="page-item"><a class="page-link" href="#">2</a></li>
-                <li class="page-item"><a class="page-link" href="#">3</a></li>
-                <li class="page-item"><a class="page-link" href="#">Sau</a></li>
+                <li class="page-item <?=($page<=1?'disabled':'')?>">
+                  <a class="page-link" href="shop.php?<?=buildQuery(['page'=>$page-1])?>">Trước</a>
+                </li>
+
+                <?php for($i=1;$i<=$totalPages;$i++): ?>
+                  <li class="page-item <?=($i==$page?'active':'')?>"><a class="page-link" href="shop.php?<?=buildQuery(['page'=>$i])?>"><?=$i?></a></li>
+                <?php endfor; ?>
+
+                <li class="page-item <?=($page>=$totalPages?'disabled':'')?>">
+                  <a class="page-link" href="shop.php?<?=buildQuery(['page'=>$page+1])?>">Sau</a>
+                </li>
               </ul>
             </nav>
           </div>
+          <?php endif; ?>
+
         </div>
       </div>
       <!-- Product List End -->
+
     </div>
   </div>
   <!-- Shop End -->
 
-  <!-- Footer Start -->
+  <!-- Footer, BackToTop, JS libs giữ nguyên -->
   <div class="container-fluid bg-dark text-secondary mt-5 pt-5">
     <div class="row px-xl-5 pt-5">
       <div class="col-lg-4 col-md-12 mb-5 pr-3 pr-xl-5">
@@ -289,8 +469,8 @@
             <h5 class="text-secondary text-uppercase mb-4">Liên kết nhanh</h5>
             <div class="d-flex flex-column justify-content-start">
               <a class="text-secondary mb-2" href="index.html"><i class="fa fa-angle-right mr-2"></i>Trang chủ</a>
-              <a class="text-secondary mb-2" href="shop.html"><i class="fa fa-angle-right mr-2"></i>Cửa hàng</a>
-              <a class="text-secondary mb-2" href="detail.html"><i class="fa fa-angle-right mr-2"></i>Chi tiết</a>
+              <a class="text-secondary mb-2" href="shop.php"><i class="fa fa-angle-right mr-2"></i>Cửa hàng</a>
+              <a class="text-secondary mb-2" href="detail.php"><i class="fa fa-angle-right mr-2"></i>Chi tiết</a>
               <a class="text-secondary mb-2" href="cart.html"><i class="fa fa-angle-right mr-2"></i>Giỏ hàng</a>
               <a class="text-secondary mb-2" href="checkout.html"><i class="fa fa-angle-right mr-2"></i>Thanh toán</a>
               <a class="text-secondary" href="contact.html"><i class="fa fa-angle-right mr-2"></i>Liên hệ</a>
@@ -337,140 +517,15 @@
       </div>
     </div>
   </div>
-  <!-- Footer End -->
 
-  <!-- Back to Top -->
   <a href="#" class="btn btn-primary back-to-top"><i class="fa fa-angle-double-up"></i></a>
 
-  <!-- JavaScript Libraries -->
   <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
   <script src="lib/easing/easing.min.js"></script>
   <script src="lib/owlcarousel/owl.carousel.min.js"></script>
-
-  <!-- Contact Javascript File -->
   <script src="mail/jqBootstrapValidation.min.js"></script>
   <script src="mail/contact.js"></script>
-
-  <!-- Template Javascript -->
   <script src="js/main.js"></script>
-
-  <!-- ==== Trang sản phẩm: data + lọc/tìm kiếm/sắp xếp ==== -->
-  <script>
-    // ======= DỮ LIỆU DEMO (có thể thay bằng JSON/API) =======
-    const PRODUCTS = [
-      {id:1, name:"iPhone 15 Pro", brand:"Apple", price:29990000, chip:"Apple A", ram:"8GB", img:"img/iphone-15.jpg", createdAt:"2024-10-01"},
-      {id:2, name:"iPhone 14", brand:"Apple", price:17990000, chip:"Apple A", ram:"6GB", img:"img/product-2.jpg", createdAt:"2024-08-20"},
-      {id:3, name:"Galaxy S24 Ultra", brand:"Samsung", price:25990000, chip:"Snapdragon", ram:"12GB", img:"img/product-3.jpg", createdAt:"2024-09-28"},
-      {id:4, name:"Galaxy A55", brand:"Samsung", price:8990000, chip:"Exynos", ram:"8GB", img:"img/product-4.jpg", createdAt:"2024-07-12"},
-      {id:5, name:"Xiaomi 13T Pro", brand:"Xiaomi", price:14990000, chip:"Dimensity", ram:"12GB", img:"img/product-5.jpg", createdAt:"2024-09-10"},
-      {id:6, name:"Redmi Note 13", brand:"Xiaomi", price:5990000, chip:"Snapdragon", ram:"8GB", img:"img/product-6.jpg", createdAt:"2024-06-05"},
-      {id:7, name:"OPPO Reno 11", brand:"OPPO", price:10990000, chip:"Dimensity", ram:"8GB", img:"img/product-7.jpg", createdAt:"2024-05-22"},
-      {id:8, name:"Vivo V30", brand:"Vivo", price:9990000, chip:"Snapdragon", ram:"8GB", img:"img/product-8.jpg", createdAt:"2024-04-30"},
-      {id:9, name:"realme 12 Pro", brand:"realme", price:8990000, chip:"Snapdragon", ram:"8GB", img:"img/product-9.jpg", createdAt:"2024-03-17"}
-    ];
-
-    let current = [...PRODUCTS];
-
-    // ======= RENDER =======
-    const listEl = document.getElementById('productList');
-    const countEl = document.getElementById('countText');
-
-    function money(v) { return v.toLocaleString('vi-VN') + ' ₫'; }
-
-    function render(list) {
-      listEl.innerHTML = '';
-      list.forEach(p => {
-        const col = document.createElement('div');
-        col.className = 'col-lg-4 col-md-6 col-sm-6 pb-1';
-        col.innerHTML = `
-          <div class="product-item bg-light mb-4">
-            <div class="product-img position-relative overflow-hidden">
-              <img class="img-fluid w-100" src="${p.img}" alt="${p.name}">
-              <div class="product-action">
-                <a class="btn btn-outline-dark btn-square" href="#"><i class="fa fa-shopping-cart"></i></a>
-                <a class="btn btn-outline-dark btn-square" href="#"><i class="far fa-heart"></i></a>
-                <a class="btn btn-outline-dark btn-square" href="#"><i class="fa fa-sync-alt"></i></a>
-                <a class="btn btn-outline-dark btn-square" href="detail.html?id=${p.id}"><i class="fa fa-search"></i></a>
-              </div>
-            </div>
-            <div class="text-center py-4">
-              <a class="h6 text-decoration-none text-truncate" href="detail.html?id=${p.id}">${p.name}</a>
-              <div class="d-flex align-items-center justify-content-center mt-2">
-                <h5>${money(p.price)}</h5>
-              </div>
-              <div class="d-flex align-items-center justify-content-center mb-1">
-                <small class="text-muted mr-2">${p.brand}</small>
-                <small class="text-muted mr-2">• ${p.chip}</small>
-                <small class="text-muted">• ${p.ram}</small>
-              </div>
-            </div>
-          </div>`;
-        listEl.appendChild(col);
-      });
-      countEl.textContent = `Đang hiển thị ${list.length} sản phẩm`;
-    }
-
-    // ======= LỌC / TÌM KIẾM =======
-    function applyFilters() {
-      const kw = document.getElementById('searchInput').value.trim().toLowerCase();
-      const brand = document.getElementById('filterBrand').value;
-      const price = document.getElementById('filterPrice').value; // "min-max"
-      const chip = document.getElementById('filterChip').value;
-      const ram = document.getElementById('filterRam').value;
-
-      let min = 0, max = Number.MAX_SAFE_INTEGER;
-      if (price) {
-        const [mi, ma] = price.split('-').map(Number);
-        min = mi; max = ma;
-      }
-
-      current = PRODUCTS.filter(p => {
-        const byName = !kw || p.name.toLowerCase().includes(kw);
-        const byBrand = !brand || p.brand === brand;
-        const byPrice = p.price >= min && p.price <= max;
-        const byChip = !chip || p.chip.includes(chip);
-        const byRam = !ram || p.ram === ram;
-        return byName && byBrand && byPrice && byChip && byRam;
-      });
-
-      render(current);
-    }
-
-    function resetFilters() {
-      document.getElementById('searchInput').value = '';
-      document.getElementById('filterBrand').value = '';
-      document.getElementById('filterPrice').value = '';
-      document.getElementById('filterChip').value = '';
-      document.getElementById('filterRam').value = '';
-      current = [...PRODUCTS];
-      render(current);
-    }
-
-    // ======= SẮP XẾP =======
-    function sortBy(type) {
-      const list = [...current];
-      if (type === 'price-asc') list.sort((a,b)=>a.price-b.price);
-      if (type === 'price-desc') list.sort((a,b)=>b.price-a.price);
-      if (type === 'latest') list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
-      current = list;
-      render(current);
-    }
-
-    // Events
-    document.getElementById('btnSearch').addEventListener('click', applyFilters);
-    document.getElementById('searchInput').addEventListener('input', applyFilters);
-    document.getElementById('btnApply').addEventListener('click', applyFilters);
-    document.getElementById('btnReset').addEventListener('click', resetFilters);
-    document.querySelectorAll('.sort-item').forEach(el=>{
-      el.addEventListener('click', e=>{
-        e.preventDefault();
-        sortBy(el.dataset.sort);
-      });
-    });
-
-    // Init
-    render(PRODUCTS);
-  </script>
 </body>
 </html>
