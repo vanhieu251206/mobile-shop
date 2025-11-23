@@ -1,9 +1,7 @@
 <?php
-// ================== KẾT NỐI DB ==================
-// Nếu bạn đã có file config/db.php thì dùng:
-// require_once __DIR__ . '/config/db.php';  // file này tạo $pdo
+session_start(); // cần cho kiểm tra login + flash
 
-// Còn nếu chưa có, dùng tạm đoạn dưới và sửa lại user/pass:
+// ================== KẾT NỐI DB ==================
 $host = 'localhost';
 $db   = 'shop_phone4';
 $user = 'root';
@@ -21,6 +19,9 @@ try {
     die("Lỗi kết nối DB: " . $e->getMessage());
 }
 
+// ================== CONFIG TASK 3 ==================
+$REVIEW_TABLE = 'danh_gia'; // nếu bảng bạn tên khác thì sửa
+
 // ================== HÀM TIỆN ÍCH ==================
 function e($str) {
     return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
@@ -31,9 +32,27 @@ function money($v) {
 function imgUrl($s) {
     if (!$s) return 'img/product-1.jpg';
     $s = trim($s);
-    // nếu đã có folder (vd img/a.jpg) thì giữ nguyên
     if (strpos($s, '/') !== false) return $s;
     return 'img/' . ltrim($s, '/');
+}
+function renderStars($avg) {
+    $avg = floatval($avg);
+    $full = floor($avg);
+    $half = ($avg - $full >= 0.5) ? 1 : 0;
+    $empty = 5 - $full - $half;
+
+    $html = '';
+    for ($i=0; $i<$full; $i++) $html .= '<small class="fas fa-star"></small>';
+    if ($half) $html .= '<small class="fas fa-star-half-alt"></small>';
+    for ($i=0; $i<$empty; $i++) $html .= '<small class="far fa-star"></small>';
+    return $html;
+}
+function displayNameFromRow($rv) {
+    // an toàn: vì SELECT nd.* nên field nào có thì lấy
+    foreach (['ten_dang_nhap','ten_nguoi_dung','ho_ten','email','username','name'] as $k) {
+        if (!empty($rv[$k])) return $rv[$k];
+    }
+    return 'Khách';
 }
 
 // ================== LẤY ID SẢN PHẨM ==================
@@ -78,6 +97,81 @@ if ($product) {
     $stmt->execute([$product['id'], $product['danh_muc_id'], $product['hang']]);
     $related = $stmt->fetchAll();
 }
+
+/* ============================================================
+   TASK 3: LẤY ĐÁNH GIÁ + LOGIC CHỈ ĐƯỢC ĐÁNH GIÁ SAU KHI MUA
+   ============================================================ */
+
+// ---- 1) Thống kê sao trung bình + số lượt đánh giá (chỉ lấy review "hien")
+$avgStar = 0;
+$totalReview = 0;
+$reviews = [];
+
+if ($product) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT AVG(so_sao) avg_sao, COUNT(*) tong
+            FROM {$REVIEW_TABLE}
+            WHERE san_pham_id = ? AND trang_thai = 'hien'
+        ");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        if ($row) {
+            $avgStar = round($row['avg_sao'], 1);
+            $totalReview = (int)$row['tong'];
+        }
+
+        // ---- 2) Danh sách review (chỉ lấy "hien")
+        $stmt = $pdo->prepare("
+            SELECT dg.*, nd.*
+            FROM {$REVIEW_TABLE} dg
+            JOIN nguoi_dung nd ON nd.id = dg.nguoi_dung_id
+            WHERE dg.san_pham_id = ?
+              AND dg.trang_thai = 'hien'
+            ORDER BY dg.ngay_tao DESC
+            LIMIT 10
+        ");
+        $stmt->execute([$id]);
+        $reviews = $stmt->fetchAll();
+    } catch (Exception $ex) {
+        $reviews = [];
+    }
+}
+
+// ---- 3) Logic “đã mua mới được đánh giá”
+$canReview = false;
+$orderIdForReview = null;
+$alreadyReviewed = false;
+
+if ($product && isset($_SESSION['user_id'])) {
+    $userId = (int)$_SESSION['user_id'];
+
+    // check đã mua + đơn hoàn thành
+    $check = $pdo->prepare("
+        SELECT dh.id
+        FROM don_hang dh
+        JOIN chi_tiet_don_hang ct ON ct.don_hang_id = dh.id
+        WHERE dh.nguoi_dung_id = ?
+          AND ct.san_pham_id = ?
+          AND dh.trang_thai = 'hoan_thanh'
+        ORDER BY dh.id DESC
+        LIMIT 1
+    ");
+    $check->execute([$userId, $id]);
+    $orderIdForReview = $check->fetchColumn();
+    if ($orderIdForReview) $canReview = true;
+
+    // chặn đánh giá trùng (dù chờ duyệt / hiện / ẩn)
+    try {
+        $chk2 = $pdo->prepare("
+            SELECT id FROM {$REVIEW_TABLE}
+            WHERE san_pham_id = ? AND nguoi_dung_id = ?
+            LIMIT 1
+        ");
+        $chk2->execute([$id, $userId]);
+        if ($chk2->fetchColumn()) $alreadyReviewed = true;
+    } catch(Exception $ex) {}
+}
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -85,19 +179,12 @@ if ($product) {
   <meta charset="utf-8">
   <title>MobileShop - Chi tiết sản phẩm</title>
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
-
   <link href="img/favicon.ico" rel="icon">
-
-  <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
-
-  <!-- Libraries -->
   <link href="lib/animate/animate.min.css" rel="stylesheet">
   <link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
-
-  <!-- Theme -->
   <link href="css/style.css" rel="stylesheet">
 </head>
 <body>
@@ -109,7 +196,7 @@ if ($product) {
   </div>
 <?php else: ?>
 
-  <!-- Topbar Start (giữ nguyên template) -->
+  <!-- Topbar Start -->
   <div class="container-fluid">
     <div class="row bg-secondary py-1 px-xl-5">
       <div class="col-lg-6 d-none d-lg-block">
@@ -223,6 +310,14 @@ if ($product) {
         <div class="h-100 bg-light p-30">
           <h3><?= e($product['ten_san_pham']) ?></h3>
 
+          <!-- Hiển thị sao trung bình -->
+          <div class="d-flex mb-2">
+            <div class="text-primary mr-2">
+              <?= renderStars($avgStar) ?>
+            </div>
+            <small class="pt-1">(<?= $totalReview ?> đánh giá)</small>
+          </div>
+
           <h3 class="font-weight-semi-bold mb-4"><?= money($product['gia']) ?></h3>
           <p class="mb-4"><?= e($product['mo_ta']) ?></p>
 
@@ -279,16 +374,101 @@ if ($product) {
           <div class="nav nav-tabs mb-4">
             <a class="nav-item nav-link text-dark active" data-toggle="tab" href="#tab-pane-1">Mô tả</a>
             <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-pane-2">Thông tin thêm</a>
+            <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-pane-3">
+              Đánh giá (<?= $totalReview ?>)
+            </a>
           </div>
+
           <div class="tab-content">
+
+            <!-- Tab mô tả -->
             <div class="tab-pane fade show active" id="tab-pane-1">
               <h4 class="mb-3">Mô tả sản phẩm</h4>
               <p><?= nl2br(e($product['mo_ta'])) ?></p>
             </div>
+
+            <!-- Tab thông tin -->
             <div class="tab-pane fade" id="tab-pane-2">
               <h4 class="mb-3">Thông tin bổ sung</h4>
               <p>Hỗ trợ đổi trả trong 7 ngày nếu lỗi nhà sản xuất. Giao hàng nhanh nội thành.</p>
             </div>
+
+            <!-- Tab đánh giá -->
+            <div class="tab-pane fade" id="tab-pane-3">
+              <div class="row">
+
+                <!-- LIST REVIEW -->
+                <div class="col-md-6">
+                  <h4 class="mb-4">Đánh giá khách hàng</h4>
+
+                  <?php if (!empty($_SESSION['flash_msg'])): ?>
+                    <div class="alert alert-<?= e($_SESSION['flash_type'] ?? 'danger') ?>">
+                      <?= e($_SESSION['flash_msg']) ?>
+                    </div>
+                    <?php unset($_SESSION['flash_msg'], $_SESSION['flash_type']); ?>
+                  <?php endif; ?>
+
+                  <?php if (!$reviews): ?>
+                    <p class="text-muted">Chưa có đánh giá nào.</p>
+                  <?php else: ?>
+                    <?php foreach ($reviews as $rv): ?>
+                      <div class="media mb-4">
+                        <div class="media-body">
+                          <h6>
+                            <?= e(displayNameFromRow($rv)) ?>
+                            <small> - <i><?= e($rv['ngay_tao']) ?></i></small>
+                          </h6>
+                          <div class="text-primary mb-1">
+                            <?= renderStars($rv['so_sao']) ?>
+                          </div>
+                          <p><?= nl2br(e($rv['nhan_xet'])) ?></p>
+                        </div>
+                      </div>
+                      <hr>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </div>
+
+               <!-- FORM REVIEW (DEV: luôn hiện để test) -->
+<div class="col-md-6">
+  <h4 class="mb-4">Gửi đánh giá</h4>
+
+  <form action="review_add.php" method="post">
+    <input type="hidden" name="san_pham_id" value="<?= (int)$id ?>">
+
+    <?php if (!empty($orderIdForReview)): ?>
+      <!-- có thì gửi kèm, không có cũng ok -->
+      <input type="hidden" name="don_hang_id" value="<?= (int)$orderIdForReview ?>">
+    <?php endif; ?>
+
+    <div class="form-group">
+      <label>Số sao *</label>
+      <select name="so_sao" class="form-control" required>
+        <option value="5">★★★★★ - Rất tốt</option>
+        <option value="4">★★★★☆ - Tốt</option>
+        <option value="3">★★★☆☆ - Tạm ổn</option>
+        <option value="2">★★☆☆☆ - Kém</option>
+        <option value="1">★☆☆☆☆ - Rất kém</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Nhận xét *</label>
+      <textarea name="nhan_xet" cols="30" rows="4" class="form-control" required></textarea>
+    </div>
+
+    <div class="form-group mb-0">
+      <button type="submit" class="btn btn-primary px-3">Gửi đánh giá</button>
+    </div>
+  </form>
+
+  <!-- Ghi chú DEV cho bạn dễ nhớ, muốn bỏ thì xóa -->
+  <small class="text-muted d-block mt-2">
+    (DEV) Form đang luôn hiện để test. Sau này bật lại điều kiện login/mua hàng.
+  </small>
+</div>
+
+
           </div>
         </div>
       </div>
@@ -334,18 +514,14 @@ if ($product) {
     </div>
   </div>
 
-  <!-- Footer giữ nguyên template (bạn có thể paste lại footer cũ nếu muốn) -->
   <div class="container-fluid bg-dark text-secondary mt-5 pt-5">
     <div class="row px-xl-5 pt-5">
-      <div class="col-lg-12 text-center pb-3">
-        &copy; MobileShop
-      </div>
+      <div class="col-lg-12 text-center pb-3">&copy; MobileShop</div>
     </div>
   </div>
 
 <?php endif; ?>
 
-  <!-- JS libs -->
   <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
   <script src="lib/easing/easing.min.js"></script>
@@ -353,7 +529,6 @@ if ($product) {
   <script src="js/main.js"></script>
 
   <script>
-    // Init related carousel
     $('.related-carousel').owlCarousel({
       autoplay: true,
       smartSpeed: 1000,
@@ -368,7 +543,6 @@ if ($product) {
       responsive: {0:{items:1},576:{items:2},768:{items:3},992:{items:4}}
     });
 
-    // Nút +/- số lượng
     const qty = document.getElementById('qty');
     document.querySelector('.btn-plus')?.addEventListener('click', () => {
       qty.value = Math.max(1, (+qty.value||1)+1);
