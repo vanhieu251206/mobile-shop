@@ -1,677 +1,574 @@
-<!DOCTYPE html>
-<html lang="en">
+<?php
+require_once "db.php";
+session_start();
 
+function e($str){
+    return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+// render sao
+function render_stars($n){
+    $n = (int)$n;
+    $html = '';
+    for($i=1; $i<=5; $i++){
+        $html .= $i <= $n
+            ? '<i class="fas fa-star"></i>'
+            : '<i class="far fa-star"></i>';
+    }
+    return $html;
+}
+
+// 1) Lấy id sản phẩm
+$id = (int)($_GET['id'] ?? 0);
+if ($id <= 0) { header("Location: shop.php"); exit; }
+
+// 2) Lấy sản phẩm + danh mục
+$stm = $pdo->prepare("
+    SELECT sp.*, dm.ten_danh_muc
+    FROM san_pham sp
+    LEFT JOIN danh_muc dm ON dm.id = sp.danh_muc_id
+    WHERE sp.id = ?
+    LIMIT 1
+");
+$stm->execute([$id]);
+$pro = $stm->fetch();
+if(!$pro){ header("Location: shop.php"); exit; }
+
+// 3) Ảnh: hỗ trợ nhiều ảnh "a.jpg,b.jpg"
+$imgs = [];
+if (!empty($pro['hinh_anh'])) {
+    $tmp = array_map('trim', explode(',', $pro['hinh_anh']));
+    foreach ($tmp as $img) if ($img !== '') $imgs[] = $img;
+}
+if (!$imgs) $imgs = ['no-image.png'];
+
+// 4) Vì DB chưa có mo_ta / thong_so → tạo placeholder theo danh mục
+$catName = trim($pro['ten_danh_muc'] ?? '');
+$mo_ta = '';        // bạn có thể tự gán mô tả sau này nếu thêm cột
+$thong_so = [];     // placeholder specs
+
+if ($catName === 'Điện thoại') {
+    $mo_ta = "Sản phẩm thuộc dòng điện thoại chính hãng. Hiệu năng ổn định, thiết kế hiện đại, phù hợp nhu cầu học tập – giải trí – làm việc.";
+    $thong_so = [
+        "Màn hình" => "Đang cập nhật",
+        "Chip xử lý" => "Đang cập nhật",
+        "RAM" => "Đang cập nhật",
+        "Bộ nhớ trong" => "Đang cập nhật",
+        "Camera" => "Đang cập nhật",
+        "Pin / Sạc" => "Đang cập nhật",
+        "Tính năng đặc biệt" => "Đang cập nhật",
+        "Bảo hành" => "12 tháng"
+    ];
+} elseif ($catName === 'Máy tính bảng') {
+    $mo_ta = "Máy tính bảng phù hợp học online, làm việc di động và giải trí. Màn hình lớn, pin tốt.";
+    $thong_so = [
+        "Màn hình" => "Đang cập nhật",
+        "Chip xử lý" => "Đang cập nhật",
+        "RAM" => "Đang cập nhật",
+        "Bộ nhớ trong" => "Đang cập nhật",
+        "Pin / Sạc" => "Đang cập nhật",
+        "Tương thích bút/phụ kiện" => "Đang cập nhật",
+        "Bảo hành" => "12 tháng"
+    ];
+} else { // Phụ kiện hoặc khác
+    $mo_ta = "Phụ kiện chính hãng, bền bỉ, hỗ trợ tốt cho thiết bị của bạn.";
+    $thong_so = [
+        "Tương thích" => "Đang cập nhật",
+        "Chất liệu / Công suất" => "Đang cập nhật",
+        "Tính năng" => "Đang cập nhật",
+        "Bảo hành" => "3 - 12 tháng (tùy sản phẩm)"
+    ];
+}
+
+// specs nổi bật 4 cái đầu
+$high_specs = [];
+foreach ($thong_so as $k=>$v) {
+    $high_specs[$k] = $v;
+    if (count($high_specs) >= 4) break;
+}
+
+// 5) Liên quan cùng danh mục
+$related = [];
+if (!empty($pro['danh_muc_id'])) {
+    $relStm = $pdo->prepare("
+        SELECT * FROM san_pham
+        WHERE danh_muc_id = ?
+          AND id <> ?
+        ORDER BY ngay_tao DESC
+        LIMIT 10
+    ");
+    $relStm->execute([(int)$pro['danh_muc_id'], $id]);
+    $related = $relStm->fetchAll();
+}
+
+$price = number_format((float)$pro['gia'], 0, ',', '.') . "₫";
+$ton_kho = (int)($pro['ton_kho'] ?? 0);
+$da_ban  = (int)($pro['da_ban'] ?? 0);
+$hang = trim(strtok($pro['ten_san_pham'], ' ')); // hãng tạm từ chữ đầu
+
+/* ============================
+   6) REVIEWS
+   - DB bạn gửi chưa có bảng danh_gia → try/catch
+============================= */
+$reviews_enabled = true;
+$reviews = [];
+
+try {
+    $rvStm = $pdo->prepare("
+        SELECT dg.*, nd.ten_dang_nhap
+        FROM danh_gia dg
+        LEFT JOIN nguoi_dung nd ON nd.id = dg.nguoi_dung_id
+        WHERE dg.san_pham_id = ?
+        ORDER BY dg.id DESC
+        LIMIT 20
+    ");
+    $rvStm->execute([$id]);
+    $reviews = $rvStm->fetchAll();
+} catch (PDOException $ex) {
+    $reviews_enabled = false; // chưa có bảng danh_gia
+}
+
+// review mẫu khi chưa có review thật
+$sample_reviews = [
+    [
+        'ten' => 'Nguyễn Minh Anh',
+        'so_sao' => 5,
+        'ngay' => '2 ngày trước',
+        'nhan_xet' => 'Máy rất mượt, pin trâu. Đóng gói cẩn thận, giao nhanh.'
+    ],
+    [
+        'ten' => 'Trần Quốc Bảo',
+        'so_sao' => 4,
+        'ngay' => '1 tuần trước',
+        'nhan_xet' => 'Camera đẹp, màn hình sáng. Giá ổn trong tầm tiền.'
+    ],
+    [
+        'ten' => 'Lê Hoàng Phúc',
+        'so_sao' => 5,
+        'ngay' => '3 tuần trước',
+        'nhan_xet' => 'Chơi game ổn định, không nóng. Rất đáng mua.'
+    ],
+];
+
+// tính avg rating
+$avg_rating = 0;
+if (count($reviews) > 0) {
+    $sum = 0;
+    foreach($reviews as $rv) $sum += (int)$rv['so_sao'];
+    $avg_rating = round($sum / count($reviews), 1);
+}
+?>
+
+<!DOCTYPE html>
+<html lang="vi">
 <head>
     <meta charset="utf-8">
-    <title>MultiShop - Online Shop Website Template</title>
+    <title><?= e($pro['ten_san_pham']) ?> - MobileShop</title>
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <meta content="Free HTML Templates" name="keywords">
-    <meta content="Free HTML Templates" name="description">
 
-    <!-- Favicon -->
     <link href="img/favicon.ico" rel="icon">
-
-    <!-- Google Web Fonts -->
     <link rel="preconnect" href="https://fonts.gstatic.com">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">  
-
-    <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
-
-    <!-- Libraries Stylesheet -->
     <link href="lib/animate/animate.min.css" rel="stylesheet">
     <link href="lib/owlcarousel/assets/owl.carousel.min.css" rel="stylesheet">
-
-    <!-- Customized Bootstrap Stylesheet -->
     <link href="css/style.css" rel="stylesheet">
+
+    <style>
+        body{background:#f7f7f7;}
+        .detail-wrap{background:#fff;border-radius:12px;padding:18px;}
+        .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+        .thumbs img{width:64px;height:64px;object-fit:cover;border:2px solid #eee;border-radius:8px;cursor:pointer;transition:.12s;}
+        .thumbs img.active{border-color:#ffcc00;transform:translateY(-2px);}
+        .badge-pill{border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;}
+        .badge-brand{background:#fff;border:1px solid #eee;color:#333;}
+        .badge-sold{background:#ffcc00;color:#000;}
+        .badge-stock-in{background:#e8fff0;color:#1a7f37;}
+        .badge-stock-out{background:#ffe8e8;color:#a12b2b;}
+
+        .price-box{background:#fff7e0;border:1px dashed #ffcc00;border-radius:10px;padding:12px;}
+        .price-main{font-size:26px;font-weight:800;color:#d0021b;}
+        .policy-box{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:12px;font-size:14px;}
+        .policy-box i{color:#28a745;margin-right:6px;}
+
+        .spec-highlight{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+        .spec-card{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:10px;}
+        .spec-card .k{font-weight:700;font-size:13px;color:#666;}
+        .spec-card .v{font-weight:700;color:#111;margin-top:4px;}
+
+        .spec-table li{display:flex;justify-content:space-between;border-bottom:1px dashed #eee;padding:8px 0;}
+        .spec-table li span:first-child{font-weight:600;color:#333;max-width:45%;}
+        .spec-table li span:last-child{color:#111;text-align:right;max-width:55%;}
+
+        .related-grid .product-item{border-radius:12px;overflow:hidden;transition:.15s;}
+        .related-grid .product-item:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.08)}
+        .related-grid .product-img img{height:220px;object-fit:contain;}
+
+        .review-card{background:#f9fafb;border:1px solid #eee;border-radius:10px;padding:12px;}
+        .review-stars i{margin-right:2px;}
+
+        @media(max-width:991px){
+            .spec-highlight{grid-template-columns:1fr;}
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Topbar Start -->
-    <div class="container-fluid">
-        <div class="row bg-secondary py-1 px-xl-5">
-            <div class="col-lg-6 d-none d-lg-block">
-                <div class="d-inline-flex align-items-center h-100">
-                    <a class="text-body mr-3" href="">About</a>
-                    <a class="text-body mr-3" href="">Contact</a>
-                    <a class="text-body mr-3" href="">Help</a>
-                    <a class="text-body mr-3" href="">FAQs</a>
-                </div>
-            </div>
-            <div class="col-lg-6 text-center text-lg-right">
-                <div class="d-inline-flex align-items-center">
-                    <div class="btn-group">
-                        <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">My Account</button>
-                        <div class="dropdown-menu dropdown-menu-right">
-                            <button class="dropdown-item" type="button">Sign in</button>
-                            <button class="dropdown-item" type="button">Sign up</button>
-                        </div>
-                    </div>
-                    <div class="btn-group mx-2">
-                        <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">USD</button>
-                        <div class="dropdown-menu dropdown-menu-right">
-                            <button class="dropdown-item" type="button">EUR</button>
-                            <button class="dropdown-item" type="button">GBP</button>
-                            <button class="dropdown-item" type="button">CAD</button>
-                        </div>
-                    </div>
-                    <div class="btn-group">
-                        <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">EN</button>
-                        <div class="dropdown-menu dropdown-menu-right">
-                            <button class="dropdown-item" type="button">FR</button>
-                            <button class="dropdown-item" type="button">AR</button>
-                            <button class="dropdown-item" type="button">RU</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="d-inline-flex align-items-center d-block d-lg-none">
-                    <a href="" class="btn px-0 ml-2">
-                        <i class="fas fa-heart text-dark"></i>
-                        <span class="badge text-dark border border-dark rounded-circle" style="padding-bottom: 2px;">0</span>
-                    </a>
-                    <a href="" class="btn px-0 ml-2">
-                        <i class="fas fa-shopping-cart text-dark"></i>
-                        <span class="badge text-dark border border-dark rounded-circle" style="padding-bottom: 2px;">0</span>
-                    </a>
-                </div>
-            </div>
-        </div>
-        <div class="row align-items-center bg-light py-3 px-xl-5 d-none d-lg-flex">
-            <div class="col-lg-4">
-                <a href="" class="text-decoration-none">
-                    <span class="h1 text-uppercase text-primary bg-dark px-2">Multi</span>
-                    <span class="h1 text-uppercase text-dark bg-primary px-2 ml-n1">Shop</span>
-                </a>
-            </div>
-            <div class="col-lg-4 col-6 text-left">
-                <form action="">
-                    <div class="input-group">
-                        <input type="text" class="form-control" placeholder="Search for products">
-                        <div class="input-group-append">
-                            <span class="input-group-text bg-transparent text-primary">
-                                <i class="fa fa-search"></i>
-                            </span>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="col-lg-4 col-6 text-right">
-                <p class="m-0">Customer Service</p>
-                <h5 class="m-0">+012 345 6789</h5>
-            </div>
-        </div>
-    </div>
-    <!-- Topbar End -->
 
-
-    <!-- Navbar Start -->
-    <div class="container-fluid bg-dark mb-30">
-        <div class="row px-xl-5">
-            <div class="col-lg-3 d-none d-lg-block">
-                <a class="btn d-flex align-items-center justify-content-between bg-primary w-100" data-toggle="collapse" href="#navbar-vertical" style="height: 65px; padding: 0 30px;">
-                    <h6 class="text-dark m-0"><i class="fa fa-bars mr-2"></i>Categories</h6>
-                    <i class="fa fa-angle-down text-dark"></i>
-                </a>
-                <nav class="collapse position-absolute navbar navbar-vertical navbar-light align-items-start p-0 bg-light" id="navbar-vertical" style="width: calc(100% - 30px); z-index: 999;">
-                    <div class="navbar-nav w-100">
-                        <div class="nav-item dropdown dropright">
-                            <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">Dresses <i class="fa fa-angle-right float-right mt-1"></i></a>
-                            <div class="dropdown-menu position-absolute rounded-0 border-0 m-0">
-                                <a href="" class="dropdown-item">Men's Dresses</a>
-                                <a href="" class="dropdown-item">Women's Dresses</a>
-                                <a href="" class="dropdown-item">Baby's Dresses</a>
-                            </div>
-                        </div>
-                        <a href="" class="nav-item nav-link">Shirts</a>
-                        <a href="" class="nav-item nav-link">Jeans</a>
-                        <a href="" class="nav-item nav-link">Swimwear</a>
-                        <a href="" class="nav-item nav-link">Sleepwear</a>
-                        <a href="" class="nav-item nav-link">Sportswear</a>
-                        <a href="" class="nav-item nav-link">Jumpsuits</a>
-                        <a href="" class="nav-item nav-link">Blazers</a>
-                        <a href="" class="nav-item nav-link">Jackets</a>
-                        <a href="" class="nav-item nav-link">Shoes</a>
-                    </div>
-                </nav>
-            </div>
-            <div class="col-lg-9">
-                <nav class="navbar navbar-expand-lg bg-dark navbar-dark py-3 py-lg-0 px-0">
-                    <a href="" class="text-decoration-none d-block d-lg-none">
-                        <span class="h1 text-uppercase text-dark bg-light px-2">Multi</span>
-                        <span class="h1 text-uppercase text-light bg-primary px-2 ml-n1">Shop</span>
-                    </a>
-                    <button type="button" class="navbar-toggler" data-toggle="collapse" data-target="#navbarCollapse">
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
-                    <div class="collapse navbar-collapse justify-content-between" id="navbarCollapse">
-                        <div class="navbar-nav mr-auto py-0">
-                              <a href="index.php" class="nav-item nav-link active"
-                  >Trang chủ</a
-                >
-                <a href="shop.php" class="nav-item nav-link">Cửa hàng</a>
-                <a href="detail.php" class="nav-item nav-link"
-                  >Chi tiết sản phẩm</a
-                >
-                <a href="contact.php" class="nav-item nav-link">Liên hệ</a>
-                <di class="nav-item dropdown">
-                  <a
-                    href="#"
-                    class="nav-link dropdown-toggle active"
-                    data-toggle="dropdown"
-                    >Trang <i class="fa fa-angle-down mt-1"></i
-                  ></a>
-                  <div class="dropdown-menu bg-primary rounded-0 border-0 m-0">
-                    <a href="cart.php" class="dropdown-item">Thống kê báo cáo</a>
-                    <a href="checkout.php" class="dropdown-item active"
-                      >Quản lý nội dung </a
-                    >
-                                </div>
-                            </div>
-                            <a href="contact.php" class="nav-item nav-link">Contact</a>
-                        </div>
-                        <div class="navbar-nav ml-auto py-0 d-none d-lg-block">
-                            <a href="" class="btn px-0">
-                                <i class="fas fa-heart text-primary"></i>
-                                <span class="badge text-secondary border border-secondary rounded-circle" style="padding-bottom: 2px;">0</span>
-                            </a>
-                            <a href="" class="btn px-0 ml-3">
-                                <i class="fas fa-shopping-cart text-primary"></i>
-                                <span class="badge text-secondary border border-secondary rounded-circle" style="padding-bottom: 2px;">0</span>
-                            </a>
-                        </div>
-                    </div>
-                </nav>
-            </div>
-        </div>
-    </div>
-    <!-- Navbar End -->
-
-
-    <!-- Breadcrumb Start -->
+    <!-- Breadcrumb -->
     <div class="container-fluid">
         <div class="row px-xl-5">
             <div class="col-12">
-                <nav class="breadcrumb bg-light mb-30">
-                    <a class="breadcrumb-item text-dark" href="#">Home</a>
-                    <a class="breadcrumb-item text-dark" href="#">Shop</a>
-                    <span class="breadcrumb-item active">Shop Detail</span>
+                <nav class="breadcrumb bg-light mb-3 mt-2">
+                    <a class="breadcrumb-item text-dark" href="index.php">Trang chủ</a>
+                    <a class="breadcrumb-item text-dark" href="shop.php">Cửa hàng</a>
+                    <?php if(!empty($pro['ten_danh_muc'])): ?>
+                        <a class="breadcrumb-item text-dark" href="shop.php?cat=<?= (int)$pro['danh_muc_id'] ?>">
+                            <?= e($pro['ten_danh_muc']) ?>
+                        </a>
+                    <?php endif; ?>
+                    <span class="breadcrumb-item active"><?= e($pro['ten_san_pham']) ?></span>
                 </nav>
             </div>
         </div>
     </div>
-    <!-- Breadcrumb End -->
 
-
-    <!-- Shop Detail Start -->
-    <div class="container-fluid pb-5">
+    <!-- Detail main -->
+    <div class="container-fluid pb-4">
         <div class="row px-xl-5">
-            <div class="col-lg-5 mb-30">
-                <div id="product-carousel" class="carousel slide" data-ride="carousel">
-                    <div class="carousel-inner bg-light">
-                        <div class="carousel-item active">
-                            <img class="w-100 h-100" src="img/product-1.jpg" alt="Image">
+            <!-- Left: gallery -->
+            <div class="col-lg-5 mb-3">
+                <div class="detail-wrap">
+                    <div id="product-carousel" class="carousel slide" data-ride="carousel">
+                        <div class="carousel-inner bg-white">
+                            <?php foreach($imgs as $i=>$img): ?>
+                                <div class="carousel-item <?= $i==0?'active':'' ?>">
+                                    <img class="w-100" style="height:420px;object-fit:contain"
+                                         src="img/<?= e($img) ?>" alt="<?= e($pro['ten_san_pham']) ?>">
+                                </div>
+                            <?php endforeach; ?>
                         </div>
-                        <div class="carousel-item">
-                            <img class="w-100 h-100" src="img/product-2.jpg" alt="Image">
-                        </div>
-                        <div class="carousel-item">
-                            <img class="w-100 h-100" src="img/product-3.jpg" alt="Image">
-                        </div>
-                        <div class="carousel-item">
-                            <img class="w-100 h-100" src="img/product-4.jpg" alt="Image">
-                        </div>
+
+                        <?php if(count($imgs)>1): ?>
+                        <a class="carousel-control-prev" href="#product-carousel" data-slide="prev">
+                            <i class="fa fa-2x fa-angle-left text-dark"></i>
+                        </a>
+                        <a class="carousel-control-next" href="#product-carousel" data-slide="next">
+                            <i class="fa fa-2x fa-angle-right text-dark"></i>
+                        </a>
+                        <?php endif; ?>
                     </div>
-                    <a class="carousel-control-prev" href="#product-carousel" data-slide="prev">
-                        <i class="fa fa-2x fa-angle-left text-dark"></i>
-                    </a>
-                    <a class="carousel-control-next" href="#product-carousel" data-slide="next">
-                        <i class="fa fa-2x fa-angle-right text-dark"></i>
-                    </a>
+
+                    <?php if(count($imgs)>1): ?>
+                    <div class="thumbs">
+                        <?php foreach($imgs as $i=>$img): ?>
+                            <img data-slide="<?= $i ?>" class="<?= $i==0?'active':'' ?>"
+                                 src="img/<?= e($img) ?>" alt="">
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
-            <div class="col-lg-7 h-auto mb-30">
-                <div class="h-100 bg-light p-30">
-                    <h3>Product Name Goes Here</h3>
-                    <div class="d-flex mb-3">
+            <!-- Right: info -->
+            <div class="col-lg-7 mb-3">
+                <div class="detail-wrap h-100">
+                    <div class="d-flex align-items-center flex-wrap mb-2" style="gap:6px;">
+                        <span class="badge-pill badge-brand"><?= e($hang) ?></span>
+                        <span class="badge-pill badge-sold">Đã bán <?= $da_ban ?></span>
+                        <?php if($ton_kho>0): ?>
+                            <span class="badge-pill badge-stock-in">Còn hàng</span>
+                        <?php else: ?>
+                            <span class="badge-pill badge-stock-out">Hết hàng</span>
+                        <?php endif; ?>
+                    </div>
+
+                    <h3 class="mb-2"><?= e($pro['ten_san_pham']) ?></h3>
+
+                    <div class="d-flex align-items-center mb-3">
                         <div class="text-primary mr-2">
-                            <small class="fas fa-star"></small>
-                            <small class="fas fa-star"></small>
-                            <small class="fas fa-star"></small>
-                            <small class="fas fa-star-half-alt"></small>
-                            <small class="far fa-star"></small>
+                            <?= render_stars($avg_rating ?: 5) ?>
                         </div>
-                        <small class="pt-1">(99 Reviews)</small>
+                        <small class="text-muted">
+                            <?= $avg_rating ? "$avg_rating/5" : "Chưa có đánh giá" ?>
+                            • <?= count($reviews) ?> đánh giá
+                        </small>
                     </div>
-                    <h3 class="font-weight-semi-bold mb-4">$150.00</h3>
-                    <p class="mb-4">Volup erat ipsum diam elitr rebum et dolor. Est nonumy elitr erat diam stet sit
-                        clita ea. Sanc ipsum et, labore clita lorem magna duo dolor no sea
-                        Nonumy</p>
-                    <div class="d-flex mb-3">
-                        <strong class="text-dark mr-3">Sizes:</strong>
-                        <form>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="size-1" name="size">
-                                <label class="custom-control-label" for="size-1">XS</label>
+
+                    <div class="price-box mb-3">
+                        <div class="price-main"><?= $price ?></div>
+                        <div class="text-muted" style="font-size:13px;">
+                            Giá đã gồm VAT • Miễn phí giao hàng nội thành
+                        </div>
+                    </div>
+
+                    <?php if($high_specs): ?>
+                        <div class="spec-highlight mb-3">
+                            <?php foreach($high_specs as $k=>$v): ?>
+                                <div class="spec-card">
+                                    <div class="k"><?= e($k) ?></div>
+                                    <div class="v"><?= e($v) ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <p class="mb-3"><?= nl2br(e($mo_ta)) ?></p>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <div class="policy-box">
+                                <div class="mb-2"><strong>Ưu đãi khi mua</strong></div>
+                                <div><i class="fa fa-check-circle"></i>Giảm 5% khi thanh toán online</div>
+                                <div><i class="fa fa-check-circle"></i>Tặng dán cường lực + ốp lưng</div>
+                                <div><i class="fa fa-check-circle"></i>Trả góp 0% qua thẻ</div>
                             </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="size-2" name="size">
-                                <label class="custom-control-label" for="size-2">S</label>
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <div class="policy-box">
+                                <div class="mb-2"><strong>Chính sách</strong></div>
+                                <div><i class="fa fa-check-circle"></i>Bảo hành chính hãng</div>
+                                <div><i class="fa fa-check-circle"></i>1 đổi 1 trong 7 ngày nếu lỗi</div>
+                                <div><i class="fa fa-check-circle"></i>Giao nhanh nội thành</div>
                             </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="size-3" name="size">
-                                <label class="custom-control-label" for="size-3">M</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center mt-3" style="gap:10px;">
+                        <form action="add_to_cart.php" method="get" class="d-flex align-items-center" style="gap:8px;">
+                            <input type="hidden" name="id" value="<?= (int)$pro['id'] ?>">
+                            <div class="input-group quantity" style="width: 140px;">
+                                <div class="input-group-btn">
+                                    <button class="btn btn-primary btn-minus" type="button"><i class="fa fa-minus"></i></button>
+                                </div>
+                                <input type="text" name="qty" class="form-control bg-secondary border-0 text-center" value="1">
+                                <div class="input-group-btn">
+                                    <button class="btn btn-primary btn-plus" type="button"><i class="fa fa-plus"></i></button>
+                                </div>
                             </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="size-4" name="size">
-                                <label class="custom-control-label" for="size-4">L</label>
-                            </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="size-5" name="size">
-                                <label class="custom-control-label" for="size-5">XL</label>
-                            </div>
+                            <button class="btn btn-outline-dark px-3" <?= $ton_kho<=0?'disabled':'' ?>>
+                                <i class="fa fa-shopping-cart mr-1"></i> Thêm vào giỏ
+                            </button>
                         </form>
+
+                        <a class="btn btn-primary px-4" href="add_to_cart.php?id=<?= (int)$pro['id'] ?>&qty=1"
+                           <?= $ton_kho<=0?'style="pointer-events:none;opacity:.6"':'' ?>>
+                            Mua ngay
+                        </a>
                     </div>
-                    <div class="d-flex mb-4">
-                        <strong class="text-dark mr-3">Colors:</strong>
-                        <form>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="color-1" name="color">
-                                <label class="custom-control-label" for="color-1">Black</label>
-                            </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="color-2" name="color">
-                                <label class="custom-control-label" for="color-2">White</label>
-                            </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="color-3" name="color">
-                                <label class="custom-control-label" for="color-3">Red</label>
-                            </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="color-4" name="color">
-                                <label class="custom-control-label" for="color-4">Blue</label>
-                            </div>
-                            <div class="custom-control custom-radio custom-control-inline">
-                                <input type="radio" class="custom-control-input" id="color-5" name="color">
-                                <label class="custom-control-label" for="color-5">Green</label>
-                            </div>
-                        </form>
-                    </div>
-                    <div class="d-flex align-items-center mb-4 pt-2">
-                        <div class="input-group quantity mr-3" style="width: 130px;">
-                            <div class="input-group-btn">
-                                <button class="btn btn-primary btn-minus">
-                                    <i class="fa fa-minus"></i>
-                                </button>
-                            </div>
-                            <input type="text" class="form-control bg-secondary border-0 text-center" value="1">
-                            <div class="input-group-btn">
-                                <button class="btn btn-primary btn-plus">
-                                    <i class="fa fa-plus"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <button class="btn btn-primary px-3"><i class="fa fa-shopping-cart mr-1"></i> Add To
-                            Cart</button>
-                    </div>
-                    <div class="d-flex pt-2">
-                        <strong class="text-dark mr-2">Share on:</strong>
-                        <div class="d-inline-flex">
-                            <a class="text-dark px-2" href="">
-                                <i class="fab fa-facebook-f"></i>
-                            </a>
-                            <a class="text-dark px-2" href="">
-                                <i class="fab fa-twitter"></i>
-                            </a>
-                            <a class="text-dark px-2" href="">
-                                <i class="fab fa-linkedin-in"></i>
-                            </a>
-                            <a class="text-dark px-2" href="">
-                                <i class="fab fa-pinterest"></i>
-                            </a>
-                        </div>
-                    </div>
+
                 </div>
             </div>
         </div>
-        <div class="row px-xl-5">
+
+        <!-- Tabs -->
+        <div class="row px-xl-5 mt-2">
             <div class="col">
-                <div class="bg-light p-30">
-                    <div class="nav nav-tabs mb-4">
-                        <a class="nav-item nav-link text-dark active" data-toggle="tab" href="#tab-pane-1">Description</a>
-                        <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-pane-2">Information</a>
-                        <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-pane-3">Reviews (0)</a>
+                <div class="detail-wrap">
+                    <div class="nav nav-tabs mb-3">
+                        <a class="nav-item nav-link text-dark active" data-toggle="tab" href="#tab-d1">Mô tả</a>
+                        <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-d2">Thông số kỹ thuật</a>
+                        <a class="nav-item nav-link text-dark" data-toggle="tab" href="#tab-d3">Đánh giá</a>
                     </div>
+
                     <div class="tab-content">
-                        <div class="tab-pane fade show active" id="tab-pane-1">
-                            <h4 class="mb-3">Product Description</h4>
-                            <p>Eos no lorem eirmod diam diam, eos elitr et gubergren diam sea. Consetetur vero aliquyam invidunt duo dolores et duo sit. Vero diam ea vero et dolore rebum, dolor rebum eirmod consetetur invidunt sed sed et, lorem duo et eos elitr, sadipscing kasd ipsum rebum diam. Dolore diam stet rebum sed tempor kasd eirmod. Takimata kasd ipsum accusam sadipscing, eos dolores sit no ut diam consetetur duo justo est, sit sanctus diam tempor aliquyam eirmod nonumy rebum dolor accusam, ipsum kasd eos consetetur at sit rebum, diam kasd invidunt tempor lorem, ipsum lorem elitr sanctus eirmod takimata dolor ea invidunt.</p>
-                            <p>Dolore magna est eirmod sanctus dolor, amet diam et eirmod et ipsum. Amet dolore tempor consetetur sed lorem dolor sit lorem tempor. Gubergren amet amet labore sadipscing clita clita diam clita. Sea amet et sed ipsum lorem elitr et, amet et labore voluptua sit rebum. Ea erat sed et diam takimata sed justo. Magna takimata justo et amet magna et.</p>
+                        <div class="tab-pane fade show active" id="tab-d1">
+                            <h5 class="mb-3">Mô tả chi tiết</h5>
+                            <p><?= nl2br(e($mo_ta)) ?></p>
                         </div>
-                        <div class="tab-pane fade" id="tab-pane-2">
-                            <h4 class="mb-3">Additional Information</h4>
-                            <p>Eos no lorem eirmod diam diam, eos elitr et gubergren diam sea. Consetetur vero aliquyam invidunt duo dolores et duo sit. Vero diam ea vero et dolore rebum, dolor rebum eirmod consetetur invidunt sed sed et, lorem duo et eos elitr, sadipscing kasd ipsum rebum diam. Dolore diam stet rebum sed tempor kasd eirmod. Takimata kasd ipsum accusam sadipscing, eos dolores sit no ut diam consetetur duo justo est, sit sanctus diam tempor aliquyam eirmod nonumy rebum dolor accusam, ipsum kasd eos consetetur at sit rebum, diam kasd invidunt tempor lorem, ipsum lorem elitr sanctus eirmod takimata dolor ea invidunt.</p>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <ul class="list-group list-group-flush">
-                                        <li class="list-group-item px-0">
-                                            Sit erat duo lorem duo ea consetetur, et eirmod takimata.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Amet kasd gubergren sit sanctus et lorem eos sadipscing at.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Duo amet accusam eirmod nonumy stet et et stet eirmod.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Takimata ea clita labore amet ipsum erat justo voluptua. Nonumy.
-                                        </li>
-                                      </ul> 
-                                </div>
-                                <div class="col-md-6">
-                                    <ul class="list-group list-group-flush">
-                                        <li class="list-group-item px-0">
-                                            Sit erat duo lorem duo ea consetetur, et eirmod takimata.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Amet kasd gubergren sit sanctus et lorem eos sadipscing at.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Duo amet accusam eirmod nonumy stet et et stet eirmod.
-                                        </li>
-                                        <li class="list-group-item px-0">
-                                            Takimata ea clita labore amet ipsum erat justo voluptua. Nonumy.
-                                        </li>
-                                      </ul> 
-                                </div>
-                            </div>
+
+                        <div class="tab-pane fade" id="tab-d2">
+                            <h5 class="mb-3">Thông số kỹ thuật</h5>
+                            <?php if($thong_so): ?>
+                                <ul class="list-unstyled spec-table">
+                                    <?php foreach($thong_so as $k=>$v): ?>
+                                        <li><span><?= e($k) ?></span><span><?= e($v) ?></span></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <small class="text-muted">*Thông số sẽ được cập nhật khi admin bổ sung dữ liệu.</small>
+                            <?php else: ?>
+                                <p>Thông số kỹ thuật đang cập nhật…</p>
+                            <?php endif; ?>
                         </div>
-                        <div class="tab-pane fade" id="tab-pane-3">
+
+                        <div class="tab-pane fade" id="tab-d3">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <h4 class="mb-4">1 review for "Product Name"</h4>
-                                    <div class="media mb-4">
-                                        <img src="img/user.jpg" alt="Image" class="img-fluid mr-3 mt-1" style="width: 45px;">
-                                        <div class="media-body">
-                                            <h6>John Doe<small> - <i>01 Jan 2045</i></small></h6>
-                                            <div class="text-primary mb-2">
-                                                <i class="fas fa-star"></i>
-                                                <i class="fas fa-star"></i>
-                                                <i class="fas fa-star"></i>
-                                                <i class="fas fa-star-half-alt"></i>
-                                                <i class="far fa-star"></i>
+                                <div class="col-md-7">
+                                    <h5 class="mb-3">
+                                        Đánh giá (<?= count($reviews) ? count($reviews) : count($sample_reviews) ?>)
+                                    </h5>
+
+                                    <?php if(count($reviews) > 0): ?>
+                                        <?php foreach($reviews as $rv): ?>
+                                            <div class="review-card mb-3">
+                                                <div class="media">
+                                                    <img src="img/user.jpg" alt="user" class="img-fluid mr-3 mt-1" style="width:45px;height:45px;">
+                                                    <div class="media-body">
+                                                        <h6 class="mb-1">
+                                                            <?= e($rv['ten_dang_nhap'] ?? ('Khách hàng #'.(int)$rv['nguoi_dung_id'])) ?>
+                                                            <small class="text-muted"> - Gần đây</small>
+                                                        </h6>
+                                                        <div class="text-primary review-stars mb-1">
+                                                            <?= render_stars($rv['so_sao']) ?>
+                                                        </div>
+                                                        <p class="mb-0"><?= e($rv['nhan_xet']) ?></p>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <p>Diam amet duo labore stet elitr ea clita ipsum, tempor labore accusam ipsum et no at. Kasd diam tempor rebum magna dolores sed sed eirmod ipsum.</p>
-                                        </div>
-                                    </div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <?php foreach($sample_reviews as $rv): ?>
+                                            <div class="review-card mb-3">
+                                                <div class="media">
+                                                    <img src="img/user.jpg" alt="user" class="img-fluid mr-3 mt-1" style="width:45px;height:45px;">
+                                                    <div class="media-body">
+                                                        <h6 class="mb-1">
+                                                            <?= e($rv['ten']) ?>
+                                                            <small class="text-muted"> - <?= e($rv['ngay']) ?></small>
+                                                        </h6>
+                                                        <div class="text-primary review-stars mb-1">
+                                                            <?= render_stars($rv['so_sao']) ?>
+                                                        </div>
+                                                        <p class="mb-0"><?= e($rv['nhan_xet']) ?></p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                        <small class="text-muted">*Đánh giá mẫu hiển thị khi DB chưa có đánh giá.</small>
+                                    <?php endif; ?>
                                 </div>
-                                <div class="col-md-6">
-                                    <h4 class="mb-4">Leave a review</h4>
-                                    <small>Your email address will not be published. Required fields are marked *</small>
-                                    <div class="d-flex my-3">
-                                        <p class="mb-0 mr-2">Your Rating * :</p>
-                                        <div class="text-primary">
-                                            <i class="far fa-star"></i>
-                                            <i class="far fa-star"></i>
-                                            <i class="far fa-star"></i>
-                                            <i class="far fa-star"></i>
-                                            <i class="far fa-star"></i>
+
+                                <div class="col-md-5">
+                                    <h5 class="mb-3">Gửi đánh giá</h5>
+
+                                    <?php if(!$reviews_enabled): ?>
+                                        <div class="alert alert-warning">
+                                            Chức năng đánh giá chưa bật (DB chưa có bảng <b>danh_gia</b>).
                                         </div>
-                                    </div>
-                                    <form>
-                                        <div class="form-group">
-                                            <label for="message">Your Review *</label>
-                                            <textarea id="message" cols="30" rows="5" class="form-control"></textarea>
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="name">Your Name *</label>
-                                            <input type="text" class="form-control" id="name">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="email">Your Email *</label>
-                                            <input type="email" class="form-control" id="email">
-                                        </div>
-                                        <div class="form-group mb-0">
-                                            <input type="submit" value="Leave Your Review" class="btn btn-primary px-3">
-                                        </div>
-                                    </form>
+                                    <?php else: ?>
+                                        <?php if(!empty($_SESSION['flash_msg'])): ?>
+                                            <div class="alert alert-<?= e($_SESSION['flash_type']) ?>">
+                                                <?= e($_SESSION['flash_msg']) ?>
+                                            </div>
+                                            <?php unset($_SESSION['flash_msg'], $_SESSION['flash_type']); ?>
+                                        <?php endif; ?>
+
+                                        <form action="review_add.php" method="post">
+                                            <input type="hidden" name="san_pham_id" value="<?= (int)$pro['id'] ?>">
+
+                                            <div class="form-group">
+                                                <label>Số sao *</label>
+                                                <select name="so_sao" class="form-control" required>
+                                                    <option value="5">★★★★★ - Rất tốt</option>
+                                                    <option value="4">★★★★☆ - Tốt</option>
+                                                    <option value="3">★★★☆☆ - Bình thường</option>
+                                                    <option value="2">★★☆☆☆ - Tệ</option>
+                                                    <option value="1">★☆☆☆☆ - Rất tệ</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label>Nhận xét *</label>
+                                                <textarea name="nhan_xet" rows="4" class="form-control" required
+                                                          placeholder="Chia sẻ cảm nhận của bạn..."></textarea>
+                                            </div>
+
+                                            <button class="btn btn-primary btn-block">
+                                                Gửi đánh giá
+                                            </button>
+                                        </form>
+
+                                        <small class="text-muted d-block mt-2">
+                                            *Chỉ đánh giá sau khi mua hàng.
+                                        </small>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
+
                     </div>
                 </div>
             </div>
         </div>
+
     </div>
-    <!-- Shop Detail End -->
 
-
-    <!-- Products Start -->
-    <div class="container-fluid py-5">
-        <h2 class="section-title position-relative text-uppercase mx-xl-5 mb-4"><span class="bg-secondary pr-3">You May Also Like</span></h2>
-        <div class="row px-xl-5">
-            <div class="col">
-                <div class="owl-carousel related-carousel">
+    <!-- Related products -->
+    <?php if($related): ?>
+    <div class="container-fluid py-4">
+        <h4 class="section-title position-relative text-uppercase mx-xl-5 mb-3">
+            <span class="bg-secondary pr-3">Sản phẩm liên quan</span>
+        </h4>
+        <div class="row px-xl-5 related-grid">
+            <?php foreach($related as $r): ?>
+                <div class="col-lg-3 col-md-4 col-sm-6 pb-3">
                     <div class="product-item bg-light">
                         <div class="product-img position-relative overflow-hidden">
-                            <img class="img-fluid w-100" src="img/product-1.jpg" alt="">
+                            <img class="img-fluid w-100" src="img/<?= e($r['hinh_anh']) ?>" alt="">
                             <div class="product-action">
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-shopping-cart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="far fa-heart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-sync-alt"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-search"></i></a>
+                                <a class="btn btn-outline-dark btn-square" href="add_to_cart.php?id=<?= (int)$r['id'] ?>"><i class="fa fa-shopping-cart"></i></a>
+                                <a class="btn btn-outline-dark btn-square" href="detail.php?id=<?= (int)$r['id'] ?>"><i class="fa fa-search"></i></a>
                             </div>
                         </div>
-                        <div class="text-center py-4">
-                            <a class="h6 text-decoration-none text-truncate" href="">Product Name Goes Here</a>
+                        <div class="text-center py-3 px-2">
+                            <a class="h6 text-decoration-none text-truncate d-block" href="detail.php?id=<?= (int)$r['id'] ?>">
+                                <?= e($r['ten_san_pham']) ?>
+                            </a>
                             <div class="d-flex align-items-center justify-content-center mt-2">
-                                <h5>$123.00</h5><h6 class="text-muted ml-2"><del>$123.00</del></h6>
+                                <h5><?= number_format((float)$r['gia'], 0, ',', '.') ?>₫</h5>
                             </div>
-                            <div class="d-flex align-items-center justify-content-center mb-1">
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small>(99)</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="product-item bg-light">
-                        <div class="product-img position-relative overflow-hidden">
-                            <img class="img-fluid w-100" src="img/product-2.jpg" alt="">
-                            <div class="product-action">
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-shopping-cart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="far fa-heart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-sync-alt"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-search"></i></a>
-                            </div>
-                        </div>
-                        <div class="text-center py-4">
-                            <a class="h6 text-decoration-none text-truncate" href="">Product Name Goes Here</a>
-                            <div class="d-flex align-items-center justify-content-center mt-2">
-                                <h5>$123.00</h5><h6 class="text-muted ml-2"><del>$123.00</del></h6>
-                            </div>
-                            <div class="d-flex align-items-center justify-content-center mb-1">
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small>(99)</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="product-item bg-light">
-                        <div class="product-img position-relative overflow-hidden">
-                            <img class="img-fluid w-100" src="img/product-3.jpg" alt="">
-                            <div class="product-action">
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-shopping-cart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="far fa-heart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-sync-alt"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-search"></i></a>
-                            </div>
-                        </div>
-                        <div class="text-center py-4">
-                            <a class="h6 text-decoration-none text-truncate" href="">Product Name Goes Here</a>
-                            <div class="d-flex align-items-center justify-content-center mt-2">
-                                <h5>$123.00</h5><h6 class="text-muted ml-2"><del>$123.00</del></h6>
-                            </div>
-                            <div class="d-flex align-items-center justify-content-center mb-1">
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small>(99)</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="product-item bg-light">
-                        <div class="product-img position-relative overflow-hidden">
-                            <img class="img-fluid w-100" src="img/product-4.jpg" alt="">
-                            <div class="product-action">
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-shopping-cart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="far fa-heart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-sync-alt"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-search"></i></a>
-                            </div>
-                        </div>
-                        <div class="text-center py-4">
-                            <a class="h6 text-decoration-none text-truncate" href="">Product Name Goes Here</a>
-                            <div class="d-flex align-items-center justify-content-center mt-2">
-                                <h5>$123.00</h5><h6 class="text-muted ml-2"><del>$123.00</del></h6>
-                            </div>
-                            <div class="d-flex align-items-center justify-content-center mb-1">
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small>(99)</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="product-item bg-light">
-                        <div class="product-img position-relative overflow-hidden">
-                            <img class="img-fluid w-100" src="img/product-5.jpg" alt="">
-                            <div class="product-action">
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-shopping-cart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="far fa-heart"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-sync-alt"></i></a>
-                                <a class="btn btn-outline-dark btn-square" href=""><i class="fa fa-search"></i></a>
-                            </div>
-                        </div>
-                        <div class="text-center py-4">
-                            <a class="h6 text-decoration-none text-truncate" href="">Product Name Goes Here</a>
-                            <div class="d-flex align-items-center justify-content-center mt-2">
-                                <h5>$123.00</h5><h6 class="text-muted ml-2"><del>$123.00</del></h6>
-                            </div>
-                            <div class="d-flex align-items-center justify-content-center mb-1">
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small class="fa fa-star text-primary mr-1"></small>
-                                <small>(99)</small>
-                            </div>
+                            <small class="text-muted">Đã bán <?= (int)($r['da_ban']??0) ?></small>
                         </div>
                     </div>
                 </div>
-            </div>
+            <?php endforeach; ?>
         </div>
     </div>
-    <!-- Products End -->
+    <?php endif; ?>
 
-
-    <!-- Footer Start -->
-    <div class="container-fluid bg-dark text-secondary mt-5 pt-5">
-        <div class="row px-xl-5 pt-5">
-            <div class="col-lg-4 col-md-12 mb-5 pr-3 pr-xl-5">
-                <h5 class="text-secondary text-uppercase mb-4">Get In Touch</h5>
-                <p class="mb-4">No dolore ipsum accusam no lorem. Invidunt sed clita kasd clita et et dolor sed dolor. Rebum tempor no vero est magna amet no</p>
-                <p class="mb-2"><i class="fa fa-map-marker-alt text-primary mr-3"></i>123 Street, New York, USA</p>
-                <p class="mb-2"><i class="fa fa-envelope text-primary mr-3"></i>info@example.com</p>
-                <p class="mb-0"><i class="fa fa-phone-alt text-primary mr-3"></i>+012 345 67890</p>
-            </div>
-            <div class="col-lg-8 col-md-12">
-                <div class="row">
-                    <div class="col-md-4 mb-5">
-                        <h5 class="text-secondary text-uppercase mb-4">Quick Shop</h5>
-                        <div class="d-flex flex-column justify-content-start">
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Home</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Our Shop</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Shop Detail</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Shopping Cart</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Checkout</a>
-                            <a class="text-secondary" href="#"><i class="fa fa-angle-right mr-2"></i>Contact Us</a>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-5">
-                        <h5 class="text-secondary text-uppercase mb-4">My Account</h5>
-                        <div class="d-flex flex-column justify-content-start">
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Home</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Our Shop</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Shop Detail</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Shopping Cart</a>
-                            <a class="text-secondary mb-2" href="#"><i class="fa fa-angle-right mr-2"></i>Checkout</a>
-                            <a class="text-secondary" href="#"><i class="fa fa-angle-right mr-2"></i>Contact Us</a>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-5">
-                        <h5 class="text-secondary text-uppercase mb-4">Newsletter</h5>
-                        <p>Duo stet tempor ipsum sit amet magna ipsum tempor est</p>
-                        <form action="">
-                            <div class="input-group">
-                                <input type="text" class="form-control" placeholder="Your Email Address">
-                                <div class="input-group-append">
-                                    <button class="btn btn-primary">Sign Up</button>
-                                </div>
-                            </div>
-                        </form>
-                        <h6 class="text-secondary text-uppercase mt-4 mb-3">Follow Us</h6>
-                        <div class="d-flex">
-                            <a class="btn btn-primary btn-square mr-2" href="#"><i class="fab fa-twitter"></i></a>
-                            <a class="btn btn-primary btn-square mr-2" href="#"><i class="fab fa-facebook-f"></i></a>
-                            <a class="btn btn-primary btn-square mr-2" href="#"><i class="fab fa-linkedin-in"></i></a>
-                            <a class="btn btn-primary btn-square" href="#"><i class="fab fa-instagram"></i></a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="row border-top mx-xl-5 py-4" style="border-color: rgba(256, 256, 256, .1) !important;">
-            <div class="col-md-6 px-xl-0">
-                <p class="mb-md-0 text-center text-md-left text-secondary">
-                    &copy; <a class="text-primary" href="#">Domain</a>. All Rights Reserved. Designed
-                    by
-                    <a class="text-primary" href="https://htmlcodex.com">HTML Codex</a>
-                </p>
-            </div>
-            <div class="col-md-6 px-xl-0 text-center text-md-right">
-                <img class="img-fluid" src="img/payments.png" alt="">
-            </div>
-        </div>
-    </div>
-    <!-- Footer End -->
-
-
-    <!-- Back to Top -->
-    <a href="#" class="btn btn-primary back-to-top"><i class="fa fa-angle-double-up"></i></a>
-
-
-    <!-- JavaScript Libraries -->
     <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
     <script src="lib/easing/easing.min.js"></script>
     <script src="lib/owlcarousel/owl.carousel.min.js"></script>
-
-    <!-- Contact Javascript File -->
-    <script src="mail/jqBootstrapValidation.min.js"></script>
-    <script src="mail/contact.js"></script>
-
-    <!-- Template Javascript -->
     <script src="js/main.js"></script>
-</body>
 
+    <script>
+        // +/- quantity
+        $(document).on('click', '.btn-plus', function () {
+            var input = $(this).closest('.quantity').find('input');
+            input.val(parseInt(input.val()||1) + 1);
+        });
+        $(document).on('click', '.btn-minus', function () {
+            var input = $(this).closest('.quantity').find('input');
+            var val = parseInt(input.val()||1) - 1;
+            input.val(val < 1 ? 1 : val);
+        });
+
+        // thumbnails click -> go to slide
+        document.querySelectorAll('.thumbs img').forEach(img=>{
+            img.addEventListener('click', ()=>{
+                let idx = parseInt(img.dataset.slide);
+                $('#product-carousel').carousel(idx);
+                document.querySelectorAll('.thumbs img').forEach(i=>i.classList.remove('active'));
+                img.classList.add('active');
+            });
+        });
+
+        // when slide changes, sync active thumb
+        $('#product-carousel').on('slid.bs.carousel', function (e) {
+            let idx = e.to;
+            document.querySelectorAll('.thumbs img').forEach(i=>i.classList.remove('active'));
+            let active = document.querySelector('.thumbs img[data-slide="'+idx+'"]');
+            if(active) active.classList.add('active');
+        });
+
+        // auto open tab by hash (vd redirect về #tab-d3)
+        document.addEventListener("DOMContentLoaded", function(){
+            if(location.hash){
+                const tabLink = document.querySelector('.nav-tabs a[href="'+location.hash+'"]');
+                if(tabLink) $(tabLink).tab('show');
+            }
+        });
+    </script>
+</body>
 </html>

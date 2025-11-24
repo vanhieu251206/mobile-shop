@@ -12,20 +12,89 @@ function qs(array $base, array $override = []) {
     return http_build_query(array_merge($base, $override));
 }
 
+/**
+ * Chuẩn hoá tên danh mục để UI giống shop điện thoại
+ * (chỉ đổi hiển thị, không ảnh hưởng DB)
+ */
+function normalizeCategoryLabel($name) {
+    $n = mb_strtolower(trim($name), 'UTF-8');
+    return match(true) {
+        in_array($n, ['ốp','op','case','bao'], true) => 'Ốp điện thoại',
+        in_array($n, ['tai','tai nghe','earphone','headphone','airpods'], true) => 'Tai nghe',
+        in_array($n, ['sạc','sac','charger','adapter'], true) => 'Sạc điện thoại',
+        in_array($n, ['cáp','cap','cable','day','dây'], true) => 'Cáp sạc',
+        default => $name
+    };
+}
+
+/**
+ * Lấy hãng từ ten_san_pham, nhưng loại bỏ phụ kiện
+ */
+function brandFromName($name, $notBrands) {
+    $token = trim(strtok($name ?? '', ' '));
+    if ($token === '') return null;
+
+    $lower = mb_strtolower($token, 'UTF-8');
+    if (in_array($lower, $notBrands, true)) return null;
+
+    return $token;
+}
+
 /* ============================
    1) Danh mục
 ============================= */
 $danh_mucs = $pdo->query("SELECT * FROM danh_muc ORDER BY id ASC")->fetchAll();
 
+// map id -> label (để dùng lại cho card)
+$catMap = [];
+foreach ($danh_mucs as $dm) {
+    $catMap[(int)$dm['id']] = normalizeCategoryLabel($dm['ten_danh_muc']);
+}
+
 /* ============================
    2) Hãng (tạm từ tên_san_pham)
+   - lọc mấy từ phụ kiện để không lẫn vào hãng
 ============================= */
-$hangs = $pdo->query("
-    SELECT DISTINCT TRIM(SUBSTRING_INDEX(ten_san_pham,' ',1)) AS hang
-    FROM san_pham
-    WHERE ten_san_pham IS NOT NULL AND ten_san_pham <> ''
-    ORDER BY hang ASC
-")->fetchAll(PDO::FETCH_COLUMN);
+$NOT_BRANDS = [
+    'ốp','op','case','bao','tai','tai nghe','airpods',
+    'sạc','sac','charger','cáp','cap','cable','dây','day',
+    'miếng','kính','loa','pin','adapter','dock','watch',
+    'bàn','chuột'
+];
+
+// lấy token đầu theo danh mục hiện tại (để list hãng gọn hơn)
+$categoryTmp = (int)($_GET['cat'] ?? 0);
+if ($categoryTmp > 0) {
+    $stmHang = $pdo->prepare("
+        SELECT DISTINCT TRIM(SUBSTRING_INDEX(ten_san_pham,' ',1)) AS hang
+        FROM san_pham
+        WHERE danh_muc_id = ?
+          AND ten_san_pham IS NOT NULL
+          AND ten_san_pham <> ''
+        ORDER BY hang ASC
+    ");
+    $stmHang->execute([$categoryTmp]);
+} else {
+    $stmHang = $pdo->query("
+        SELECT DISTINCT TRIM(SUBSTRING_INDEX(ten_san_pham,' ',1)) AS hang
+        FROM san_pham
+        WHERE ten_san_pham IS NOT NULL
+          AND ten_san_pham <> ''
+        ORDER BY hang ASC
+    ");
+}
+$rawHangs = $stmHang->fetchAll(PDO::FETCH_COLUMN);
+
+// lọc bỏ phụ kiện
+$hangs = [];
+foreach ($rawHangs as $h) {
+    $h = trim($h);
+    if ($h === '') continue;
+    if (in_array(mb_strtolower($h,'UTF-8'), $NOT_BRANDS, true)) continue;
+    $hangs[$h] = true;
+}
+$hangs = array_keys($hangs);
+sort($hangs, SORT_LOCALE_STRING);
 
 /* ============================
    3) Nhận tham số lọc/search
@@ -48,7 +117,7 @@ if (!isset($priceRanges[$priceKey])) $priceKey = "all";
 [$min_price, $max_price] = $priceRanges[$priceKey];
 
 /* ============================
-   4) Sort (shop điện thoại thường cần)
+   4) Sort
 ============================= */
 $sortKey = $_GET['sort'] ?? "new";
 $sortWhitelist = [
@@ -111,7 +180,6 @@ $listSql = "SELECT * FROM san_pham $whereSQL ORDER BY $sortSQL LIMIT ? OFFSET ?"
 $listStm = $pdo->prepare($listSql);
 $bindParams = array_merge($params, [$limit, $offset]);
 
-// bind int đúng kiểu
 for ($i=0; $i<count($bindParams); $i++) {
     $val = $bindParams[$i];
     $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
@@ -157,7 +225,6 @@ $baseQuery = [
       .btn-apply{width:100%;padding:8px 0;background:#ffcc00;border:none;border-radius:6px;font-weight:700;cursor:pointer;}
       .btn-apply:hover{background:#ff9900;}
 
-      /* phone shop vibes */
       .product-item {border-radius:10px; overflow:hidden; transition:.15s;}
       .product-item:hover {transform:translateY(-3px); box-shadow:0 6px 20px rgba(0,0,0,.08);}
       .badge-brand {position:absolute; top:8px; left:8px; background:#fff; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:700;}
@@ -167,7 +234,7 @@ $baseQuery = [
 </head>
 
 <body>
-    <!-- Topbar (giữ template của m) -->
+    <!-- Topbar -->
     <div class="container-fluid">
         <div class="row bg-secondary py-1 px-xl-5">
             <div class="col-lg-6 d-none d-lg-block">
@@ -226,7 +293,7 @@ $baseQuery = [
         </div>
     </div>
 
-    <!-- Navbar (giữ template) -->
+    <!-- Navbar -->
     <div class="container-fluid bg-dark mb-30">
         <div class="row px-xl-5">
             <div class="col-lg-12">
@@ -270,7 +337,7 @@ $baseQuery = [
                                 <?php foreach($danh_mucs as $dm): ?>
                                     <label>
                                         <input type="radio" name="cat" value="<?= (int)$dm['id'] ?>" <?= $category==(int)$dm['id']?'checked':'' ?>>
-                                        <?= e($dm['ten_danh_muc']) ?>
+                                        <?= e(normalizeCategoryLabel($dm['ten_danh_muc'])) ?>
                                     </label>
                                 <?php endforeach; ?>
                             </div>
@@ -278,7 +345,7 @@ $baseQuery = [
 
                         <!-- Hãng -->
                         <div class="filter-group">
-                            <label>Hãng:</label>
+                            <label>Hãng điện thoại:</label>
                             <div class="filter-options">
                                 <label>
                                     <input type="radio" name="brand" value="all" <?= ($brand=='all'||$brand=='')?'checked':'' ?>>
@@ -326,9 +393,7 @@ $baseQuery = [
                             <input type="text" class="form-control" name="config" value="<?= e($config) ?>" placeholder="VD: Pro, Note, 8GB...">
                         </div>
 
-                        <!-- Sort giữ lại -->
                         <input type="hidden" name="sort" value="<?= e($sortKey) ?>">
-
                         <button type="submit" class="btn-apply">Áp dụng</button>
                     </form>
                 </div>
@@ -362,14 +427,18 @@ $baseQuery = [
                 <div class="row">
                     <?php if ($products): ?>
                         <?php foreach ($products as $pro): 
-                            $hang = trim(strtok($pro['ten_san_pham'], ' '));
+                            $brandToken = brandFromName($pro['ten_san_pham'], $NOT_BRANDS);
+                            $labelForBadge = $brandToken 
+                                ? $brandToken 
+                                : ($catMap[(int)$pro['danh_muc_id']] ?? 'Phụ kiện');
+
                             $ton = (int)($pro['ton_kho'] ?? 0);
                             $ban = (int)($pro['da_ban'] ?? 0);
                         ?>
                             <div class="col-lg-4 col-md-6 col-sm-6 pb-4">
                                 <div class="product-item bg-light mb-4 position-relative">
                                     <div class="product-img position-relative overflow-hidden">
-                                        <span class="badge-brand"><?= e($hang) ?></span>
+                                        <span class="badge-brand"><?= e($labelForBadge) ?></span>
                                         <span class="badge-sold">Đã bán <?= $ban ?></span>
 
                                         <img class="img-fluid w-100"
@@ -396,7 +465,7 @@ $baseQuery = [
                                             <?= $ton > 0 ? "Còn $ton sản phẩm" : "Hết hàng" ?>
                                         </div>
 
-                                        <!-- rating demo (chưa có DB sao) -->
+                                        <!-- rating demo -->
                                         <div class="d-flex align-items-center justify-content-center mb-1 mt-2">
                                             <small class="fa fa-star text-primary mr-1"></small>
                                             <small class="fa fa-star text-primary mr-1"></small>
@@ -433,7 +502,7 @@ $baseQuery = [
         </div>
     </div>
 
-    <!-- Footer giữ template -->
+    <!-- Footer -->
     <div class="container-fluid bg-dark text-secondary mt-5 pt-5">
         <div class="row px-xl-5 pt-5">
             <div class="col-lg-12 text-center pb-3">&copy; MobileShop</div>

@@ -25,9 +25,10 @@ try {
 function back_with_msg($product_id, $msg, $type="danger") {
     $_SESSION['flash_msg'] = $msg;
     $_SESSION['flash_type'] = $type;
-    header("Location: detail.php?id=".(int)$product_id);
+    header("Location: detail.php?id=".(int)$product_id . "#tab-d3"); // nhảy về tab review
     exit;
 }
+
 
 /**
  * 2) KIỂM TRA POST

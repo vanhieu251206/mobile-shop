@@ -5,32 +5,37 @@ session_start();
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $ten_dang_nhap = trim($_POST['ten_dang_nhap'] ?? '');
-    $mat_khau = $_POST['mat_khau'] ?? '';
+    $identifier = trim($_POST['ten_dang_nhap'] ?? ''); // username OR email
+    $mat_khau   = $_POST['mat_khau'] ?? '';
 
-    if ($ten_dang_nhap && $mat_khau) {
-        $stmt = $pdo->prepare("SELECT * FROM nguoi_dung WHERE ten_dang_nhap=?");
-        $stmt->execute([$ten_dang_nhap]);
+    if ($identifier === '' || $mat_khau === '') {
+        $error = "Vui lòng nhập đầy đủ thông tin.";
+    } else {
+        // tìm theo username hoặc email
+        $stmt = $pdo->prepare("
+            SELECT id, ten_dang_nhap, email, mat_khau, vai_tro
+            FROM nguoi_dung
+            WHERE ten_dang_nhap = ? OR email = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$identifier, $identifier]);
         $user = $stmt->fetch();
 
-        if ($user && password_verify($mat_khau, $user['mat_khau'])) {
-            // Lưu session
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['ten_dang_nhap'];
-            $_SESSION['role'] = $user['vai_tro'];
-
-            // Chuyển hướng theo vai trò
-            if ($user['vai_tro'] === 'admin') {
-                header("Location: admin/index.php");
-            } else {
-                header("Location: index.php");
-            }
-            exit;
+        if (!$user) {
+            $error = "Không tìm thấy tài khoản.";
+        } elseif (!password_verify($mat_khau, $user['mat_khau'])) {
+            $error = "Tên đăng nhập/email hoặc mật khẩu không đúng.";
         } else {
-            $error = "Tên đăng nhập hoặc mật khẩu không đúng.";
+            session_regenerate_id(true);
+
+            $_SESSION['user_id']  = (int)$user['id'];
+            $_SESSION['username'] = $user['ten_dang_nhap'];
+            $_SESSION['vai_tro']  = $user['vai_tro'];
+            $_SESSION['role']     = $user['vai_tro']; // tương thích code cũ
+
+            header("Location: index.php");
+            exit;
         }
-    } else {
-        $error = "Vui lòng nhập đầy đủ thông tin.";
     }
 }
 ?>
@@ -39,10 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Đăng nhập Zalo Style</title>
+<title>Đăng nhập</title>
 <style>
 :root {
-    --primary-color: #0073e6; /* xanh Zalo */
+    --primary-color: #0073e6;
     --btn-hover: #005bb5;
     --font-family: Arial, sans-serif;
 }
@@ -61,18 +66,45 @@ body {
     border-radius: 10px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     width: 100%;
-    max-width: 360px;
+    max-width: 380px;
     text-align: center;
 }
 h2 {
     color: var(--primary-color);
-    margin-bottom: 25px;
+    margin-bottom: 18px;
     font-size: 24px;
 }
+
+/* tabs */
+.role-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    background: #f3f4f6;
+    padding: 6px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+}
+.role-switch a, .role-switch div {
+    padding: 8px 6px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #333;
+    text-decoration: none;
+    display: block;
+    transition: .15s;
+}
+.role-switch .active {
+    background: #fff;
+    color: var(--primary-color);
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+
 input[type="text"], input[type="password"] {
     width: calc(100% - 20px);
     padding: 10px;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
     border: 1px solid #ddd;
     border-radius: 6px;
     font-size: 16px;
@@ -88,51 +120,22 @@ button {
     cursor: pointer;
     transition: 0.2s;
 }
-button:hover {
-    background-color: var(--btn-hover);
-}
-.separator {
-    margin: 20px 0;
-    position: relative;
-    text-align: center;
-    color: #606770;
-    font-size: 14px;
-}
-.separator::before, .separator::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    width: 40%;
-    height: 1px;
-    background-color: #ddd;
-}
-.separator::before { left: 0; }
-.separator::after { right: 0; }
+button:hover { background-color: var(--btn-hover); }
+.error-message { color: red; margin-bottom: 12px; }
 
-/* Button Google/Email style */
-.btn-google {
-    display: block;
-    width: 100%;
-    padding: 12px;
-    background-color: #009944;
-    color: white;
+.note {
+    font-size: 13px;
+    color: #666;
+    background: #f8fafc;
+    border: 1px dashed #ddd;
+    padding: 8px;
     border-radius: 6px;
-    font-weight: bold;
-    text-decoration: none;
-    margin-bottom: 15px;
-    transition: 0.2s;
-}
-.btn-google:hover {
-    background-color: #008033;
-}
-
-.error-message {
-    color: red;
-    margin-bottom: 15px;
+    margin-top: 10px;
+    text-align: left;
 }
 
 .register-link {
-    margin-top: 10px;
+    margin-top: 12px;
     font-size: 14px;
 }
 .register-link a {
@@ -150,13 +153,23 @@ button:hover {
         <p class="error-message"><?= htmlspecialchars($error) ?></p>
     <?php endif; ?>
 
+    <!-- Tabs -->
+    <div class="role-switch">
+        <div class="active">Khách hàng</div>
+        <!-- Bấm vào đây là vào thẳng staff.php -->
+        <a href="staff.php?dev=1">Staff / Admin</a>
+    </div>
+
+    <!-- Form login khách hàng -->
     <form method="POST">
-        <input type="text" name="ten_dang_nhap" placeholder="Tên đăng nhập" required>
+        <input type="text" name="ten_dang_nhap" placeholder="Tên đăng nhập hoặc email" required>
         <input type="password" name="mat_khau" placeholder="Mật khẩu" required>
         <button type="submit">Đăng nhập</button>
     </form>
 
-    
+    <div class="note">
+        <strong>DEV:</strong> Bấm tab <b>Staff/Admin</b> để vào thẳng <code>staff.php</code> (không cần đăng nhập).
+    </div>
 
     <div class="register-link">
         Chưa có tài khoản? <a href="dangky.php">Đăng ký ngay</a>
