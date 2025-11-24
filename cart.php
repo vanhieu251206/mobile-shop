@@ -3,7 +3,7 @@
 // PHẦN XỬ LÝ BACKEND (SAU NÀY)
 // ============================
 
-// Kết nối database (tùy bạn sửa thông tin)
+// Kết nối database 
 $host = "localhost";
 $user = "root";
 $pass = "";  
@@ -82,7 +82,6 @@ $total = $subtotal + $shipping;
 <body>
 
 <!-- ===================== -->
-<!-- GIỮ NGUYÊN GIAO DIỆN -->
 <!-- ===================== -->
 
 <!-- Topbar Start -->
