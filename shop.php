@@ -41,6 +41,16 @@ function brandFromName($name, $notBrands) {
 }
 
 /* ============================
+   Số lượng sản phẩm trong giỏ
+============================= */
+$cartCount = 0;
+if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
+    foreach($_SESSION['cart'] as $item){
+        $cartCount += (int)($item['so_luong'] ?? $item['qty'] ?? 0);
+    }
+}
+
+/* ============================
    1) Danh mục
 ============================= */
 $danh_mucs = $pdo->query("SELECT * FROM danh_muc ORDER BY id ASC")->fetchAll();
@@ -53,7 +63,6 @@ foreach ($danh_mucs as $dm) {
 
 /* ============================
    2) Hãng (tạm từ tên_san_pham)
-   - lọc mấy từ phụ kiện để không lẫn vào hãng
 ============================= */
 $NOT_BRANDS = [
     'ốp','op','case','bao','tai','tai nghe','airpods',
@@ -62,7 +71,6 @@ $NOT_BRANDS = [
     'bàn','chuột'
 ];
 
-// lấy token đầu theo danh mục hiện tại (để list hãng gọn hơn)
 $categoryTmp = (int)($_GET['cat'] ?? 0);
 if ($categoryTmp > 0) {
     $stmHang = $pdo->prepare("
@@ -104,7 +112,7 @@ $brand    = trim($_GET['brand'] ?? 'all');
 $config   = trim($_GET['config'] ?? '');
 $kw       = trim($_GET['kw'] ?? '');
 
-// giá theo whitelist để tránh bậy input
+// giá theo whitelist
 $priceRanges = [
     "all" => [0, 0],
     "0-1000000" => [0, 1000000],
@@ -203,7 +211,7 @@ $baseQuery = [
 <html lang="vi">
 <head>
     <meta charset="utf-8">
-    <title>MobileShop - Cửa hàng điện thoại</title>
+    <title>MobiShop - Cửa hàng điện thoại</title>
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
 
     <link href="img/favicon.ico" rel="icon">
@@ -234,7 +242,7 @@ $baseQuery = [
 </head>
 
 <body>
-    <!-- Topbar -->
+    <!-- Topbar Start (giống index) -->
     <div class="container-fluid">
         <div class="row bg-secondary py-1 px-xl-5">
             <div class="col-lg-6 d-none d-lg-block">
@@ -242,29 +250,54 @@ $baseQuery = [
                     <a class="text-body mr-3" href="#">Giới thiệu</a>
                     <a class="text-body mr-3" href="#">Liên hệ</a>
                     <a class="text-body mr-3" href="#">Hỗ trợ</a>
-                    <a class="text-body mr-3" href="#">FAQs</a>
+                    <a class="text-body mr-3" href="#">Câu hỏi thường gặp</a>
                 </div>
             </div>
             <div class="col-lg-6 text-center text-lg-right">
                 <div class="d-inline-flex align-items-center">
                     <div class="btn-group">
-                        <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">Tài khoản</button>
-                        <div class="dropdown-menu dropdown-menu-right">
-                            <button class="dropdown-item" type="button">Đăng nhập</button>
-                            <button class="dropdown-item" type="button">Đăng ký</button>
-                        </div>
+                        <?php if (!isset($_SESSION['user_id'])): ?>
+                            <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">
+                                Tài khoản
+                            </button>
+                            <div class="dropdown-menu dropdown-menu-right">
+                                <a class="dropdown-item" href="dangnhap.php">Đăng nhập</a>
+                                <a class="dropdown-item" href="dangky.php">Đăng ký</a>
+                            </div>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-toggle="dropdown">
+                                Xin chào, <?= e($_SESSION['username']) ?>
+                            </button>
+                            <div class="dropdown-menu dropdown-menu-right">
+                                <?php if (($_SESSION['vai_tro'] ?? '') === 'admin'): ?>
+                                    <a class="dropdown-item" href="staff.php">Trang Staff/Admin</a>
+                                <?php endif; ?>
+                                <a class="dropdown-item" href="index.php?logout=1">Đăng xuất</a>
+                            </div>
+                        <?php endif; ?>
                     </div>
+                </div>
+
+                <!-- cart mobile -->
+                <div class="d-inline-flex align-items-center d-block d-lg-none">
+                    <a href="gio_hang.php" class="btn px-0 ml-2">
+                        <i class="fas fa-shopping-cart text-dark"></i>
+                        <span class="badge text-dark border border-dark rounded-circle" style="padding-bottom: 2px;">
+                            <?= $cartCount ?>
+                        </span>
+                    </a>
                 </div>
             </div>
         </div>
 
-        <!-- Search bar -->
+        <!-- Search bar + logo + hotline -->
         <div class="row align-items-center bg-light py-3 px-xl-5 d-none d-lg-flex">
             <div class="col-lg-4">
                 <a href="index.php" class="text-decoration-none">
-                    <span class="h1 text-uppercase text-primary bg-dark px-2">Mobile</span>
+                    <span class="h1 text-uppercase text-primary bg-dark px-2">Mobi</span>
                     <span class="h1 text-uppercase text-dark bg-primary px-2 ml-n1">Shop</span>
                 </a>
+                <div class="text-muted small mt-1">Hệ sinh thái điện thoại & phụ kiện cao cấp</div>
             </div>
 
             <div class="col-lg-4 col-6 text-left">
@@ -274,9 +307,9 @@ $baseQuery = [
                     <input type="hidden" name="brand" value="<?= e($brand) ?>">
                     <input type="hidden" name="config" value="<?= e($config) ?>">
                     <input type="hidden" name="sort" value="<?= e($sortKey) ?>">
-
                     <div class="input-group">
-                        <input type="text" class="form-control" name="kw" value="<?= e($kw) ?>" placeholder="Tìm điện thoại, phụ kiện...">
+                        <input type="text" class="form-control" name="kw" value="<?= e($kw) ?>"
+                               placeholder="Tìm kiếm theo tên, hãng, dòng máy...">
                         <div class="input-group-append">
                             <button class="input-group-text bg-transparent text-primary" type="submit">
                                 <i class="fa fa-search"></i>
@@ -287,17 +320,42 @@ $baseQuery = [
             </div>
 
             <div class="col-lg-4 col-6 text-right">
-                <p class="m-0">Hotline</p>
-                <h5 class="m-0">1900 0000</h5>
+                <p class="m-0">Hỗ trợ khách hàng</p>
+                <h5 class="m-0">1900 6868</h5>
+                <small class="text-muted">9:00 - 21:00 (T2 - CN)</small>
             </div>
         </div>
     </div>
+    <!-- Topbar End -->
 
-    <!-- Navbar -->
+
+    <!-- Navbar Start (thanh màu dưới search giống index) -->
     <div class="container-fluid bg-dark mb-30">
         <div class="row px-xl-5">
-            <div class="col-lg-12">
+            <div class="col-lg-3 d-none d-lg-block">
+                <a class="btn d-flex align-items-center justify-content-between bg-primary w-100"
+                   data-toggle="collapse" href="#navbar-vertical" style="height: 65px; padding: 0 30px;">
+                    <h6 class="text-dark m-0"><i class="fa fa-bars mr-2"></i>Danh mục sản phẩm</h6>
+                    <i class="fa fa-angle-down text-dark"></i>
+                </a>
+                <nav class="collapse position-absolute navbar navbar-vertical navbar-light align-items-start p-0 bg-light"
+                     id="navbar-vertical" style="width: calc(100% - 30px); z-index: 999;">
+                    <div class="navbar-nav w-100">
+                        <?php foreach($danh_mucs as $dm): ?>
+                            <a href="shop.php?cat=<?= (int)$dm['id'] ?>" class="nav-item nav-link">
+                                <?= e(normalizeCategoryLabel($dm['ten_danh_muc'])) ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </nav>
+            </div>
+
+            <div class="col-lg-9">
                 <nav class="navbar navbar-expand-lg bg-dark navbar-dark py-3 py-lg-0 px-0">
+                    <a href="index.php" class="text-decoration-none d-block d-lg-none">
+                        <span class="h1 text-uppercase text-dark bg-light px-2">Mobi</span>
+                        <span class="h1 text-uppercase text-light bg-primary px-2 ml-n1">Shop</span>
+                    </a>
                     <button type="button" class="navbar-toggler" data-toggle="collapse" data-target="#navbarCollapse">
                         <span class="navbar-toggler-icon"></span>
                     </button>
@@ -305,11 +363,16 @@ $baseQuery = [
                         <div class="navbar-nav mr-auto py-0">
                             <a href="index.php" class="nav-item nav-link">Trang chủ</a>
                             <a href="shop.php" class="nav-item nav-link active">Cửa hàng</a>
+                            <a href="gio_hang.php" class="nav-item nav-link">Giỏ hàng</a>
                             <a href="contact.php" class="nav-item nav-link">Liên hệ</a>
                         </div>
                         <div class="navbar-nav ml-auto py-0 d-none d-lg-block">
-                            <a href="cart.php" class="btn px-0 ml-3">
+                            <a href="gio_hang.php" class="btn px-0 ml-3">
                                 <i class="fas fa-shopping-cart text-primary"></i>
+                                <span class="badge text-secondary border border-secondary rounded-circle"
+                                      style="padding-bottom: 2px;">
+                                    <?= $cartCount ?>
+                                </span>
                             </a>
                         </div>
                     </div>
@@ -317,6 +380,8 @@ $baseQuery = [
             </div>
         </div>
     </div>
+    <!-- Navbar End -->
+
 
     <!-- Filters + Sort + Products -->
     <div class="container-fluid px-xl-5">
@@ -426,10 +491,10 @@ $baseQuery = [
 
                 <div class="row">
                     <?php if ($products): ?>
-                        <?php foreach ($products as $pro): 
+                        <?php foreach ($products as $pro):
                             $brandToken = brandFromName($pro['ten_san_pham'], $NOT_BRANDS);
-                            $labelForBadge = $brandToken 
-                                ? $brandToken 
+                            $labelForBadge = $brandToken
+                                ? $brandToken
                                 : ($catMap[(int)$pro['danh_muc_id']] ?? 'Phụ kiện');
 
                             $ton = (int)($pro['ton_kho'] ?? 0);
@@ -502,12 +567,14 @@ $baseQuery = [
         </div>
     </div>
 
-    <!-- Footer -->
+    <!-- Footer đơn giản -->
     <div class="container-fluid bg-dark text-secondary mt-5 pt-5">
         <div class="row px-xl-5 pt-5">
-            <div class="col-lg-12 text-center pb-3">&copy; MobileShop</div>
+            <div class="col-lg-12 text-center pb-3">&copy; MobiShop</div>
         </div>
     </div>
+
+    <a href="#" class="btn btn-primary back-to-top"><i class="fa fa-angle-double-up"></i></a>
 
     <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
@@ -519,9 +586,11 @@ $baseQuery = [
       document.addEventListener("DOMContentLoaded", function() {
           const toggleBtn = document.querySelector('.filter-toggle');
           const panel = document.querySelector('.filter-panel');
-          toggleBtn.addEventListener('click', () => {
-              panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-          });
+          if(toggleBtn && panel){
+              toggleBtn.addEventListener('click', () => {
+                  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+              });
+          }
       });
     </script>
 </body>
