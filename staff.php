@@ -1,7 +1,22 @@
 <?php
 session_start();
 require_once "db.php";
-
+if (isset($_GET['dev']) && $_GET['dev'] == '1') {
+    // bypass dev -> auto set admin
+    $_SESSION['user_id']  = $_SESSION['user_id'] ?? 1;
+    $_SESSION['username'] = $_SESSION['username'] ?? 'dev-admin';
+    $_SESSION['role']     = 'admin';
+    $_SESSION['vai_tro']  = 'admin';
+} else {
+    if (empty($_SESSION['user_id'])) {
+        header("Location: dangnhap.php");
+        exit;
+    }
+    $role = $_SESSION['role'] ?? $_SESSION['vai_tro'] ?? '';
+    if ($role !== 'admin') {
+        die("Bạn không có quyền truy cập trang Quản lý.");
+    }
+}
 /* ================== HELPERS ================== */
 function e($str){ return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8'); }
 function is_post(){ return $_SERVER['REQUEST_METHOD'] === 'POST'; }

@@ -153,12 +153,7 @@ button:hover { background-color: var(--btn-hover); }
         <p class="error-message"><?= htmlspecialchars($error) ?></p>
     <?php endif; ?>
 
-    <!-- Tabs -->
-    <div class="role-switch">
-        <div class="active">Khách hàng</div>
-        <!-- Bấm vào đây là vào thẳng staff.php -->
-        <a href="staff.php?dev=1">Staff / Admin</a>
-    </div>
+
 
     <!-- Form login khách hàng -->
     <form method="POST">

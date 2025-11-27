@@ -7,7 +7,7 @@ $db   = 'shop_phone4'; // Tên CSDL của bạn
 $user = 'root'; 
 $pass = ''; 
 $charset = 'utf8mb4';
-$port = 3306; // Sử dụng port 3309
+$port = 3309; // Sử dụng port 3309
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset;port=$port"; // Thêm port vào DSN
 $options = [

@@ -220,6 +220,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                         <a href="shop.php" class="nav-item nav-link">Cửa hàng</a>
                         <a href="gio_hang.php" class="nav-item nav-link">Giỏ hàng</a>
                         <a href="contact.php" class="nav-item nav-link">Liên hệ</a>
+                        <a href="staff.php" class="nav-item nav-link">Trang Quản Lý</a>
                     </div>
 
                     <div class="navbar-nav ml-auto py-0 d-none d-lg-block">
