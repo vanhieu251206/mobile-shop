@@ -22,15 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['place_order'])) {
  */
 function cart_qty($cartItem) {
     if (!is_array($cartItem)) return 1;
-    if (isset($cartItem['qty'])) return (int)$cartItem['qty'];
-    if (isset($cartItem['so_luong'])) return (int)$cartItem['so_luong'];
-    if (isset($cartItem['quantity'])) return (int)$cartItem['quantity'];
+    if (isset($cartItem['qty']))       return (int)$cartItem['qty'];
+    if (isset($cartItem['so_luong']))  return (int)$cartItem['so_luong'];
+    if (isset($cartItem['quantity']))  return (int)$cartItem['quantity'];
     return 1;
 }
 
-// Lấy cart (ưu tiên cart, fallback gio_hang)
+// ====== LẤY GIỎ HÀNG TỪ SESSION ======
 $cart = $_SESSION['cart'] ?? [];
 if (!$cart && isset($_SESSION['gio_hang'])) {
+    // nếu dự án cũ dùng gio_hang
     $cart = $_SESSION['gio_hang'];
 }
 
@@ -39,18 +40,20 @@ if (empty($cart) || !is_array($cart)) {
     die("Giỏ hàng trống.");
 }
 
-// ====== LẤY GIỎ HÀNG TỪ SESSION + TÍNH LẠI TIỀN THEO DB ======
+// ====== LẤY GIỎ HÀNG TỪ DB + TÍNH TIỀN ======
 $ids  = array_keys($cart);
-$cart_items = [];
+$cart_items   = [];
 $total_amount = 0;
 
 try {
-    $in = implode(',', array_fill(0, count($ids), '?'));
+    $in  = implode(',', array_fill(0, count($ids), '?'));
     $stm = $pdo->prepare("SELECT id, ten_san_pham, gia, hinh_anh FROM san_pham WHERE id IN ($in)");
     $stm->execute($ids);
     $products = $stm->fetchAll();
 
-    if (!$products) die("Không tìm thấy sản phẩm trong giỏ.");
+    if (!$products) {
+        die("Không tìm thấy sản phẩm trong giỏ.");
+    }
 
     foreach($products as $p){
         $pid = (int)$p['id'];
@@ -64,7 +67,7 @@ try {
         $total_amount += $sub;
 
         $cart_items[] = [
-            'id' => $pid,
+            'id'  => $pid,
             'ten' => $p['ten_san_pham'],
             'gia' => $price,
             'qty' => $qty,
@@ -76,20 +79,19 @@ try {
     die("Lỗi lấy giỏ hàng: ".$ex->getMessage());
 }
 
-
 // ====== NHẬN DỮ LIỆU CHECKOUT ======
-$customer_name  = trim($_POST['customer_name'] ?? '');
+$customer_name  = trim($_POST['customer_name']  ?? '');
 $customer_email = trim($_POST['customer_email'] ?? '');
 $customer_phone = trim($_POST['customer_phone'] ?? '');
-$customer_note  = trim($_POST['customer_note'] ?? '');
+$customer_note  = trim($_POST['customer_note']  ?? '');
 
-$ship_name      = trim($_POST['ship_name'] ?? '');
-$ship_phone     = trim($_POST['ship_phone'] ?? '');
-$ship_address   = trim($_POST['ship_address'] ?? '');
-$ship_city      = trim($_POST['ship_city'] ?? '');
+$ship_name      = trim($_POST['ship_name']     ?? '');
+$ship_phone     = trim($_POST['ship_phone']    ?? '');
+$ship_address   = trim($_POST['ship_address']  ?? '');
+$ship_city      = trim($_POST['ship_city']     ?? '');
 $ship_district  = trim($_POST['ship_district'] ?? '');
-$ship_ward      = trim($_POST['ship_ward'] ?? '');
-$ship_note      = trim($_POST['ship_note'] ?? '');
+$ship_ward      = trim($_POST['ship_ward']     ?? '');
+$ship_note      = trim($_POST['ship_note']     ?? '');
 
 $payment_method = $_POST['payment_method'] ?? 'cod'; // cod | bank | wallet | installment
 $wallet_type    = $_POST['wallet_type'] ?? null;
@@ -111,39 +113,38 @@ $full_address = trim("$ship_address, $ship_ward, $ship_district, $ship_city", " 
 $receipt_path = null;
 if ($payment_method === 'bank' && !empty($_FILES['bank_receipt']['name'])) {
 
-    // giới hạn loại file
     $allow_ext = ['jpg','jpeg','png','webp','pdf'];
     $ext = strtolower(pathinfo($_FILES['bank_receipt']['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allow_ext)) {
+    if (!in_array($ext, $allow_ext, true)) {
         die("File biên lai không hợp lệ. Chỉ nhận jpg/png/webp/pdf.");
     }
 
-    // giới hạn size ~ 3MB
     if ($_FILES['bank_receipt']['size'] > 3 * 1024 * 1024) {
         die("File biên lai quá lớn (tối đa 3MB).");
     }
 
     $upload_dir = __DIR__ . "/uploads/receipts";
-    if (!is_dir($upload_dir)) @mkdir($upload_dir, 0777, true);
+    if (!is_dir($upload_dir)) {
+        @mkdir($upload_dir, 0777, true);
+    }
 
     $safe_name = "receipt_" . time() . "_" . rand(1000,9999) . "." . $ext;
-    $target = $upload_dir . "/" . $safe_name;
+    $target    = $upload_dir . "/" . $safe_name;
 
     if (move_uploaded_file($_FILES['bank_receipt']['tmp_name'], $target)) {
         $receipt_path = "uploads/receipts/" . $safe_name;
     }
 }
 
-// info payment để lưu (nếu DB có cột)
+// Thông tin thanh toán lưu JSON (nếu bảng có)
 $payment_info = [
-    'method' => $payment_method,
-    'wallet_type' => $wallet_type,
-    'install_months' => $install_months,
-    'install_bank' => $install_bank,
-    'receipt' => $receipt_path
+    'method'        => $payment_method,
+    'wallet_type'   => $wallet_type,
+    'install_months'=> $install_months,
+    'install_bank'  => $install_bank,
+    'receipt'       => $receipt_path
 ];
 $payment_info_json = json_encode($payment_info, JSON_UNESCAPED_UNICODE);
-
 
 // ====== TẠO ĐƠN ======
 $order_id = 0;
@@ -151,17 +152,15 @@ $order_id = 0;
 try {
     $pdo->beginTransaction();
 
-    /**
-     * Thử insert đầy đủ (nếu bảng don_hang có các cột này)
-     * Nếu không có => catch và fallback tối thiểu.
-     */
+    // Cố gắng insert đầy đủ các cột (nếu bảng có)
     try {
         $insertOrder = $pdo->prepare("
             INSERT INTO don_hang
             (nguoi_dung_id, tong_tien, trang_thai, ngay_tao,
              ten_khach_hang, email_khach_hang, sdt_khach_hang,
              ten_nguoi_nhan, sdt_nguoi_nhan, dia_chi_giao,
-             ghi_chu_khach, ghi_chu_giao, phuong_thuc_thanh_toan, thong_tin_thanh_toan, bien_lai)
+             ghi_chu_khach, ghi_chu_giao,
+             phuong_thuc_thanh_toan, thong_tin_thanh_toan, bien_lai)
             VALUES
             (?, ?, 'cho_xu_ly', NOW(),
              ?, ?, ?,
@@ -187,7 +186,7 @@ try {
             $receipt_path
         ]);
     } catch (PDOException $e) {
-        // fallback tối thiểu (an toàn với schema hiện tại của bạn)
+        // Nếu DB không có các cột trên, fallback tối thiểu
         $insertOrder = $pdo->prepare("
             INSERT INTO don_hang (nguoi_dung_id, tong_tien, trang_thai, ngay_tao)
             VALUES (?, ?, 'cho_xu_ly', NOW())
@@ -199,7 +198,9 @@ try {
     }
 
     $order_id = (int)$pdo->lastInsertId();
-    if ($order_id <= 0) throw new Exception("Không tạo được đơn hàng.");
+    if ($order_id <= 0) {
+        throw new Exception("Không tạo được đơn hàng.");
+    }
 
     // Insert chi tiết đơn hàng
     $insertItem = $pdo->prepare("
@@ -218,16 +219,19 @@ try {
 
     $pdo->commit();
 
-    // Clear cart sau khi tạo thành công
+    // === GHI NHỚ MÃ ĐƠN ĐỂ TRA CỨU  ===
+    $_SESSION['last_order_id'] = $order_id;
+
+    // Clear giỏ hàng
     unset($_SESSION['cart'], $_SESSION['gio_hang']);
 
 } catch(Exception $ex){
-    if ($pdo->inTransaction()) $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     die("Lỗi đặt hàng: ".$ex->getMessage());
 }
 
-
-// ====== TRANG THÀNH CÔNG ======
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -249,7 +253,9 @@ try {
 <body>
 <div class="wrap">
     <div class="success">✅ Đặt hàng thành công!</div>
-    <p class="muted">Mã đơn hàng của bạn: <b>#<?= $order_id ?></b></p>
+    <p class="muted">
+        Mã đơn hàng của bạn: <b>#<?= $order_id ?></b>
+    </p>
 
     <h5>Thông tin nhận hàng</h5>
     <div class="box">
@@ -276,7 +282,7 @@ try {
 
         <?php elseif($payment_method === 'wallet'): ?>
             <p><b>Phương thức:</b> Ví điện tử (<?= e($wallet_type) ?>)</p>
-            <p>Shop sẽ liên hệ / hoặc chuyển cổng thanh toán sau.</p>
+            <p>Shop sẽ liên hệ / hoặc gửi link thanh toán sau.</p>
 
         <?php elseif($payment_method === 'installment'): ?>
             <p><b>Phương thức:</b> Trả góp</p>
@@ -294,6 +300,7 @@ try {
     <div class="mt-4">
         <a class="btnx btn-primary" href="index.php">Về trang chủ</a>
         <a class="btnx btn-light" href="shop.php">Tiếp tục mua sắm</a>
+        <a class="btnx btn-light" href="tra_cuu.php?ma=<?= $order_id ?>">Xem đơn hàng</a>
     </div>
 </div>
 </body>

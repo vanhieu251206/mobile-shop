@@ -1,22 +1,29 @@
 <?php
 session_start();
 require_once "db.php";
+
+/* ================== DEV BYPASS / AUTH ==================
+ *  - staff.php?dev=1 => vào thẳng, auto set admin (dùng cho DEV)
+ *  - staff.php       => bắt đăng nhập & vai_tro = admin
+========================================================= */
 if (isset($_GET['dev']) && $_GET['dev'] == '1') {
-    // bypass dev -> auto set admin
+    // Dev bypass: nếu chưa có session thì auto set 1 tài khoản admin giả
     $_SESSION['user_id']  = $_SESSION['user_id'] ?? 1;
     $_SESSION['username'] = $_SESSION['username'] ?? 'dev-admin';
     $_SESSION['role']     = 'admin';
     $_SESSION['vai_tro']  = 'admin';
 } else {
+    // Truy cập bình thường: bắt buộc đăng nhập & có vai trò admin
     if (empty($_SESSION['user_id'])) {
         header("Location: dangnhap.php");
         exit;
     }
     $role = $_SESSION['role'] ?? $_SESSION['vai_tro'] ?? '';
     if ($role !== 'admin') {
-        die("Bạn không có quyền truy cập trang Quản lý.");
+        die("Bạn không có quyền truy cập trang Staff.");
     }
 }
+
 /* ================== HELPERS ================== */
 function e($str){ return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8'); }
 function is_post(){ return $_SERVER['REQUEST_METHOD'] === 'POST'; }
@@ -44,26 +51,6 @@ function check_csrf(){
     if (empty($_POST['csrf']) || $_POST['csrf'] !== $_SESSION['csrf']) {
         http_response_code(419);
         die("CSRF token không hợp lệ.");
-    }
-}
-
-/* ================== DEV BYPASS / AUTH ==================
- *  - staff.php?dev=1 => vào thẳng, auto set admin
- *  - staff.php thường => bắt đăng nhập & vai_tro admin
- */
-if (isset($_GET['dev']) && $_GET['dev'] == '1') {
-    $_SESSION['user_id']  = $_SESSION['user_id'] ?? 1;
-    $_SESSION['username'] = $_SESSION['username'] ?? 'dev-admin';
-    $_SESSION['role']     = 'admin';
-    $_SESSION['vai_tro']  = 'admin';
-} else {
-    if (empty($_SESSION['user_id'])) {
-        header("Location: dangnhap.php");
-        exit;
-    }
-    $role = $_SESSION['role'] ?? $_SESSION['vai_tro'] ?? '';
-    if ($role !== 'admin') {
-        die("Bạn không có quyền truy cập trang Staff.");
     }
 }
 
@@ -309,7 +296,7 @@ list($flash_msg, $flash_type) = get_flash();
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.10.0/css/all.min.css" rel="stylesheet">
 
-    <!-- Optional: bootstrap 4.6 (nếu style.css chưa có) -->
+    <!-- Optional: bootstrap 4.6 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
 
     <link href="css/style.css" rel="stylesheet">
@@ -358,6 +345,8 @@ list($flash_msg, $flash_type) = get_flash();
         <a class="<?= $tab==='customers'?'active':'' ?>" href="?tab=customers"><i class="fa fa-users"></i> Khách hàng</a>
         <a class="<?= $tab==='reports'?'active':'' ?>" href="?tab=reports"><i class="fa fa-file-invoice-dollar"></i> Báo cáo bán hàng</a>
         <hr style="border-color:#334155">
+        <!-- Link sang Admin Panel -->
+        <a href="admin.php"><i class="fa fa-user-shield"></i> Trang Admin</a>
         <a href="index.php"><i class="fa fa-home"></i> Về trang khách</a>
         <a href="dangxuat.php"><i class="fa fa-sign-out-alt"></i> Đăng xuất</a>
     </div>
@@ -723,7 +712,7 @@ list($flash_msg, $flash_type) = get_flash();
     </div>
 </div>
 
-<!-- JS bootstrap (nếu cần) -->
+<!-- JS bootstrap -->
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 

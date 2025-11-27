@@ -30,9 +30,25 @@ $allProducts = $allStmt->fetchAll();
 // Số lượng sản phẩm trong giỏ
 $cartCount = 0;
 if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
-    // cart dạng: [id => ['so_luong'=>x] ...] hoặc ['qty'=>x]
     foreach($_SESSION['cart'] as $item){
         $cartCount += (int)($item['so_luong'] ?? $item['qty'] ?? 0);
+    }
+}
+
+/* ====== ICON TRA CỨU ĐƠN HÀNG (đơn mới đặt) ====== */
+$newOrderId   = $_SESSION['last_order_id'] ?? null;
+$hasNewOrder  = false;
+
+if ($newOrderId && isset($_SESSION['user_id'])) {
+    $check = $pdo->prepare("SELECT trang_thai FROM don_hang WHERE id = ? AND nguoi_dung_id = ? LIMIT 1");
+    $check->execute([(int)$newOrderId, (int)$_SESSION['user_id']]);
+    $orderRow = $check->fetch();
+    if ($orderRow) {
+        $hasNewOrder = true;
+    } else {
+        // nếu không còn đơn đó (hoặc không thuộc user này) thì xoá session
+        unset($_SESSION['last_order_id']);
+        $newOrderId  = null;
     }
 }
 ?>
@@ -52,7 +68,6 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
     <link href="css/style.css" rel="stylesheet">
 
     <style>
-        /* Nhấn nhẹ cảm giác cao cấp hơn cho card sản phẩm */
         .product-item{
             border-radius: 12px;
             overflow: hidden;
@@ -98,6 +113,27 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         @media (max-width: 767.98px){
             .carousel-item{height:320px!important;}
         }
+
+        /* Icon đơn hàng mới nhấp nháy */
+        .order-alert-icon{
+            position: relative;
+        }
+        .order-alert-badge{
+            position:absolute;
+            top:-2px;
+            right:-2px;
+            width:10px;
+            height:10px;
+            border-radius:50%;
+            background:#ff4757;
+            box-shadow:0 0 0 0 rgba(255,71,87,.7);
+            animation:pulse-order 1.2s infinite;
+        }
+        @keyframes pulse-order{
+            0%{transform:scale(1);opacity:1;}
+            70%{transform:scale(1.8);opacity:0;}
+            100%{opacity:0;}
+        }
     </style>
 </head>
 
@@ -108,7 +144,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         <div class="col-lg-6 d-none d-lg-block">
             <div class="d-inline-flex align-items-center h-100">
                 <a class="text-body mr-3" href="">Giới thiệu</a>
-                <a class="text-body mr-3" href="">Liên hệ</a>
+                <a class="text-body mr-3" href="contact.php">Liên hệ</a>
                 <a class="text-body mr-3" href="">Hỗ trợ</a>
                 <a class="text-body mr-3" href="">Câu hỏi thường gặp</a>
             </div>
@@ -131,7 +167,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                         </button>
                         <div class="dropdown-menu dropdown-menu-right">
                             <?php if (($_SESSION['vai_tro'] ?? '') === 'admin'): ?>
-                                <a class="dropdown-item" href="staff.php">Trang Staff/Admin</a>
+                                <a class="dropdown-item" href="admin.php">Trang quản trị</a>
                             <?php endif; ?>
                             <a class="dropdown-item" href="index.php?logout=1">Đăng xuất</a>
                         </div>
@@ -139,8 +175,21 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                 </div>
             </div>
 
-            <!-- Nút giỏ hàng mobile -->
+            <!-- Nút tra cứu + giỏ hàng mobile -->
             <div class="d-inline-flex align-items-center d-block d-lg-none">
+
+                <!-- Icon xe tải tra cứu đơn hàng -->
+                <a href="tra_cuu.php" class="btn px-0 ml-2" title="Tra cứu đơn hàng">
+                    <i class="fas fa-truck-moving text-dark"></i>
+                </a>
+
+                <?php if(isset($_SESSION['user_id']) && $hasNewOrder): ?>
+                    <a href="tra_cuu.php?ma=<?= (int)$newOrderId ?>" class="btn px-0 ml-2 order-alert-icon" title="Đơn hàng mới">
+                        <i class="fas fa-receipt text-warning"></i>
+                        <span class="order-alert-badge"></span>
+                    </a>
+                <?php endif; ?>
+
                 <a href="gio_hang.php" class="btn px-0 ml-2">
                     <i class="fas fa-shopping-cart text-dark"></i>
                     <span class="badge text-dark border border-dark rounded-circle" style="padding-bottom: 2px;">
@@ -220,10 +269,25 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                         <a href="shop.php" class="nav-item nav-link">Cửa hàng</a>
                         <a href="gio_hang.php" class="nav-item nav-link">Giỏ hàng</a>
                         <a href="contact.php" class="nav-item nav-link">Liên hệ</a>
-                        <a href="staff.php" class="nav-item nav-link">Trang Quản Lý</a>
+                        <?php if (($_SESSION['vai_tro'] ?? '') === 'admin'): ?>
+                            <a href="admin.php" class="nav-item nav-link">Quản trị</a>
+                        <?php endif; ?>
                     </div>
 
-                    <div class="navbar-nav ml-auto py-0 d-none d-lg-block">
+                    <div class="navbar-nav ml-auto py-0 d-none d-lg-flex align-items-center">
+
+                        <!-- Icon xe tải tra cứu đơn hàng (desktop) -->
+                        <a href="tra_cuu.php" class="btn px-0 ml-3" title="Tra cứu đơn hàng">
+                            <i class="fas fa-truck-moving text-light"></i>
+                        </a>
+
+                        <?php if(isset($_SESSION['user_id']) && $hasNewOrder): ?>
+                            <a href="tra_cuu.php?ma=<?= (int)$newOrderId ?>" class="btn px-0 ml-3 order-alert-icon" title="Đơn hàng mới">
+                                <i class="fas fa-receipt text-warning"></i>
+                                <span class="order-alert-badge"></span>
+                            </a>
+                        <?php endif; ?>
+
                         <a href="gio_hang.php" class="btn px-0 ml-3">
                             <i class="fas fa-shopping-cart text-primary"></i>
                             <span class="badge text-secondary border border-secondary rounded-circle"
@@ -380,13 +444,13 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         <?php if($featuredProducts): ?>
             <?php foreach($featuredProducts as $product): ?>
                 <?php
-                    $sold = (int)($product['da_ban'] ?? 0);
-                    $stock = (int)($product['ton_kho'] ?? 0);
+                    $stock   = (int)($product['ton_kho'] ?? 0);
+                    $inStock = $stock > 0;
                     $badgeClass = 'hot';
                     $badgeText  = 'Bán chạy';
                     if ($stock > 0 && $stock <= 5) {
                         $badgeClass = 'low';
-                        $badgeText = 'Sắp hết hàng';
+                        $badgeText  = 'Sắp hết hàng';
                     }
                 ?>
                 <div class="col-lg-3 col-md-4 col-sm-6 pb-1">
@@ -417,11 +481,10 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                                 <h5><?= number_format($product['gia'], 0, ',', '.') ?>₫</h5>
                             </div>
                             <div class="d-flex align-items-center justify-content-center phone-meta">
-                                <span class="mr-2">Đã bán: <?= $sold ?></span>
-                                <?php if($stock > 0): ?>
-                                    <span>| Còn: <?= $stock ?></span>
+                                <?php if($inStock): ?>
+                                    <span class="text-success">Tình trạng: Còn hàng</span>
                                 <?php else: ?>
-                                    <span class="text-danger">Hết hàng</span>
+                                    <span class="text-danger">Tình trạng: Hết hàng</span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -443,6 +506,10 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
     </h2>
     <div class="row px-xl-5">
         <?php foreach($latestProducts as $product): ?>
+            <?php
+                $stock   = (int)($product['ton_kho'] ?? 0);
+                $inStock = $stock > 0;
+            ?>
             <div class="col-lg-3 col-md-4 col-sm-6 pb-1">
                 <div class="product-item bg-light mb-4">
                     <div class="product-img position-relative overflow-hidden">
@@ -471,7 +538,11 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
                             <h5><?= number_format($product['gia'], 0, ',', '.') ?>₫</h5>
                         </div>
                         <div class="d-flex align-items-center justify-content-center phone-meta">
-                            <span>Kho: <?= (int)($product['ton_kho'] ?? 0) ?></span>
+                            <?php if($inStock): ?>
+                                <span class="text-success">Tình trạng: Còn hàng</span>
+                            <?php else: ?>
+                                <span class="text-danger">Tình trạng: Hết hàng</span>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>

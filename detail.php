@@ -101,14 +101,14 @@ if (!empty($pro['danh_muc_id'])) {
     $related = $relStm->fetchAll();
 }
 
-$price = number_format((float)$pro['gia'], 0, ',', '.') . "₫";
+$price   = number_format((float)$pro['gia'], 0, ',', '.') . "₫";
 $ton_kho = (int)($pro['ton_kho'] ?? 0);
 $da_ban  = (int)($pro['da_ban'] ?? 0);
-$hang = trim(strtok($pro['ten_san_pham'], ' ')); // hãng tạm từ chữ đầu
+$hang    = trim(strtok($pro['ten_san_pham'], ' ')); // hãng tạm từ chữ đầu
 
 /* ============================
    6) REVIEWS
-   - DB bạn gửi chưa có bảng danh_gia → try/catch
+   - CHỈ hiển thị đánh giá đã DUYỆT
 ============================= */
 $reviews_enabled = true;
 $reviews = [];
@@ -119,16 +119,18 @@ try {
         FROM danh_gia dg
         LEFT JOIN nguoi_dung nd ON nd.id = dg.nguoi_dung_id
         WHERE dg.san_pham_id = ?
+          AND dg.trang_thai = 'duyet'   -- CHỈ lấy đánh giá đã duyệt
         ORDER BY dg.id DESC
         LIMIT 20
     ");
     $rvStm->execute([$id]);
     $reviews = $rvStm->fetchAll();
 } catch (PDOException $ex) {
-    $reviews_enabled = false; // chưa có bảng danh_gia
+    // nếu chưa có bảng danh_gia thì tắt chức năng review
+    $reviews_enabled = false;
 }
 
-// review mẫu khi chưa có review thật
+// review mẫu khi chưa có review thật hoặc chưa có review duyệt
 $sample_reviews = [
     [
         'ten' => 'Nguyễn Minh Anh',
@@ -150,7 +152,7 @@ $sample_reviews = [
     ],
 ];
 
-// tính avg rating
+// tính avg rating (chỉ trên đánh giá đã duyệt)
 $avg_rating = 0;
 if (count($reviews) > 0) {
     $sum = 0;
@@ -434,7 +436,7 @@ if (count($reviews) > 0) {
                                                 </div>
                                             </div>
                                         <?php endforeach; ?>
-                                        <small class="text-muted">*Đánh giá mẫu hiển thị khi DB chưa có đánh giá.</small>
+                                        <small class="text-muted">*Đánh giá mẫu hiển thị khi chưa có đánh giá được duyệt.</small>
                                     <?php endif; ?>
                                 </div>
 
@@ -479,7 +481,7 @@ if (count($reviews) > 0) {
                                         </form>
 
                                         <small class="text-muted d-block mt-2">
-                                            *Chỉ đánh giá sau khi mua hàng.
+                                            *Chỉ đánh giá sau khi mua hàng. Đánh giá sẽ được hiển thị sau khi admin duyệt.
                                         </small>
                                     <?php endif; ?>
                                 </div>
